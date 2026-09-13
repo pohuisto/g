@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo!!!!!!!!", SubTitle = "", TabWidth = 160,
+    Title = "datebayo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -312,6 +312,87 @@ Options.placefishtraptoggle:OnChanged(function(state)
         end
     end
 end)
+
+Tabs.Farming:AddSection("Fish Trap Farm")
+Tabs.Farming:AddToggle("autofishtraptoggle", {
+    Title = "Auto Walk + Collect Fish Traps",
+    Default = false
+})
+Tabs.Farming:AddSlider("fishtraprangeslider", {
+    Title = "Search Range",
+    Min = 50, Max = 500, Rounding = 1, Default = 250
+})
+
+local function getFishTrapsWithFish()
+    local traps = {}
+    local dep = workspace:FindFirstChild("Deployables")
+    if not dep or not root then return traps end
+
+    local range = tonumber(Options.fishtraprangeslider.Value) or 250
+    local charPos = root.Position
+
+    for _, trap in ipairs(dep:GetChildren()) do
+        if trap.Name == "Fish Trap" then
+            local contents = trap:FindFirstChild("Contents")
+            if contents then
+                for _, item in ipairs(contents:GetChildren()) do
+                    if item.Name == "Raw Fish" and item:GetAttribute("EntityID") then
+                        local pp = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
+                        if pp then
+                            local dist = (pp.Position - charPos).Magnitude
+                            if dist <= range then
+                                table.insert(traps, {
+                                    trap = trap,
+                                    part = pp,
+                                    entityID = item:GetAttribute("EntityID"),
+                                    dist = dist
+                                })
+                            end
+                        end
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(traps, function(a, b) return a.dist < b.dist end)
+    return traps
+end
+
+task.spawn(function()
+    while true do
+        if Options.autofishtraptoggle and Options.autofishtraptoggle.Value and root and hum then
+            local traps = getFishTrapsWithFish()
+            if #traps > 0 then
+                local target = traps[1]
+                -- Walk to the trap
+                while Options.autofishtraptoggle.Value and target.trap.Parent and root do
+                    local dist = (target.part.Position - root.Position).Magnitude
+                    if dist < 8 then
+                        -- Pick up the fish
+                        pcall(function()
+                            packets.Pickup.send(target.entityID)
+                        end)
+                        task.wait(0.15)
+                        break
+                    else
+                        hum:MoveTo(target.part.Position)
+                        task.wait(0.3)
+                    end
+                end
+            else
+                task.wait(0.8)
+            end
+        else
+            task.wait(0.4)
+        end
+        task.wait(0.1)
+    end
+end)
+
+-- Also make Auto Pickup work on Fish Trap Contents
+-- Add this inside your existing pickup loop (where it already checks chests)
 
 Tabs.Farming:AddSection("Bush Deleter")
 Tabs.Farming:AddToggle("bushdeletertoggle", {
@@ -750,18 +831,26 @@ task.spawn(function()
     while true do
         local range = tonumber(Options.pickuprange.Value) or 35
 
-        if Options.autopickuptoggle.Value and root then
-            local itemsFolder = workspace:FindFirstChild("Items")
-            if itemsFolder then
-                for _, item in ipairs(itemsFolder:GetChildren()) do
-                    if (item:IsA("BasePart") or item:IsA("MeshPart")) and item:GetAttribute("EntityID") and shouldPickup(item.Name) then
-                        if (item.Position - root.Position).Magnitude <= range then
-                            pickup(item:GetAttribute("EntityID"))
+       -- Fish Trap Contents pickup
+if Options.autopickuptoggle.Value and root then
+    local dep = workspace:FindFirstChild("Deployables")
+    if dep then
+        for _, trap in ipairs(dep:GetChildren()) do
+            if trap.Name == "Fish Trap" and trap:FindFirstChild("Contents") then
+                local base = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
+                if base and (base.Position - root.Position).Magnitude <= range then
+                    for _, item in ipairs(trap.Contents:GetChildren()) do
+                        if (item:IsA("BasePart") or item:IsA("MeshPart")) and item:GetAttribute("EntityID") then
+                            if shouldPickup(item.Name) or item.Name == "Raw Fish" then
+                                pickup(item:GetAttribute("EntityID"))
+                            end
                         end
                     end
                 end
             end
         end
+    end
+end
 
         if Options.chestpickuptoggle.Value and root then
             local deployablesFolder = workspace:FindFirstChild("Deployables")
