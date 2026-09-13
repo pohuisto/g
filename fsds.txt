@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayo?!", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -464,6 +464,31 @@ local function updws()
 end
 Options.wstoggle:OnChanged(updws)
 Options.jptoggle:OnChanged(updws)
+
+Tabs.Main:AddSection("Noclip")
+Tabs.Main:CreateToggle("nocliptoggle", { Title = "Noclip", Default = false })
+
+local noclipConn
+Options.nocliptoggle:OnChanged(function(state)
+    if state then
+        if noclipConn then noclipConn:Disconnect() end
+        noclipConn = runs.Stepped:Connect(function()
+            local char = plr.Character
+            if char then
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+    else
+        if noclipConn then
+            noclipConn:Disconnect()
+            noclipConn = nil
+        end
+    end
+end)
 
 local function updmsa()
     if slopecon then slopecon:Disconnect(); slopecon = nil end
