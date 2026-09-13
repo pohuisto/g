@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayo!!!!!!!!", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -251,6 +251,64 @@ Options.killauratoggle:OnChanged(function(state)
         if killAuraConn then
             killAuraConn:Disconnect()
             killAuraConn = nil
+        end
+    end
+end)
+
+Tabs.Farming:AddSection("Fish Trap Placer")
+Tabs.Farming:AddToggle("placefishtraptoggle", {
+    Title = "Place Fish Traps Continuously",
+    Default = false
+})
+
+local function placeFishTrap()
+    local char = plr.Character
+    if not (char and char:FindFirstChild("HumanoidRootPart")) then return end
+
+    local root = char.HumanoidRootPart
+    local cam = workspace.CurrentCamera
+    local cursorPos = cam and cam.CFrame.Position or root.Position
+
+    -- Raycast down in front of the player to find water
+    local look = root.CFrame.LookVector
+    local origin = root.Position + look * 6 + Vector3.new(0, 8, 0)
+
+    local rp = RaycastParams.new()
+    rp.FilterType = Enum.RaycastFilterType.Exclude
+    rp.FilterDescendantsInstances = {char}
+    rp.IgnoreWater = false
+
+    local result = workspace:Raycast(origin, Vector3.new(0, -40, 0), rp)
+    if not result then return end
+
+    -- Only place if we hit water or very close to water surface
+    local placePos = result.Position + Vector3.new(0, 0.5, 0)
+
+    if packets.PlaceStructure and packets.PlaceStructure.send then
+        pcall(function()
+            packets.PlaceStructure.send({
+                buildingName = "Fish Trap",
+                cframe = CFrame.new(placePos),
+                vec = placePos,
+                isMobile = false,
+                cursor = cursorPos
+            })
+        end)
+    end
+end
+
+local fishTrapConn
+Options.placefishtraptoggle:OnChanged(function(state)
+    if state then
+        if fishTrapConn then fishTrapConn:Disconnect() end
+        fishTrapConn = runs.Heartbeat:Connect(function()
+            placeFishTrap()
+            task.wait(0.25)
+        end)
+    else
+        if fishTrapConn then
+            fishTrapConn:Disconnect()
+            fishTrapConn = nil
         end
     end
 end)
