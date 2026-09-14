@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo?!", SubTitle = "", TabWidth = 160,
+    Title = "datebayo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -844,7 +844,7 @@ local function stopQueenServantAura()
     if queenServantConn then queenServantConn:Disconnect(); queenServantConn = nil end
 end
 
--- Pickup loop
+-- Full fixed Auto Pickup loop (replace your whole pickup task.spawn with this)
 task.spawn(function()
     local function shouldPickup(name)
         if #selecteditems == 0 then
@@ -856,27 +856,40 @@ task.spawn(function()
     while true do
         local range = tonumber(Options.pickuprange.Value) or 35
 
-       -- Fish Trap Contents pickup
-if Options.autopickuptoggle.Value and root then
-    local dep = workspace:FindFirstChild("Deployables")
-    if dep then
-        for _, trap in ipairs(dep:GetChildren()) do
-            if trap.Name == "Fish Trap" and trap:FindFirstChild("Contents") then
-                local base = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
-                if base and (base.Position - root.Position).Magnitude <= range then
-                    for _, item in ipairs(trap.Contents:GetChildren()) do
-                        if (item:IsA("BasePart") or item:IsA("MeshPart")) and item:GetAttribute("EntityID") then
-                            if shouldPickup(item.Name) or item.Name == "Raw Fish" then
-                                pickup(item:GetAttribute("EntityID"))
+        -- Normal items on the map
+        if Options.autopickuptoggle.Value and root then
+            local itemsFolder = workspace:FindFirstChild("Items")
+            if itemsFolder then
+                for _, item in ipairs(itemsFolder:GetChildren()) do
+                    if (item:IsA("BasePart") or item:IsA("MeshPart")) and item:GetAttribute("EntityID") and shouldPickup(item.Name) then
+                        if (item.Position - root.Position).Magnitude <= range then
+                            pickup(item:GetAttribute("EntityID"))
+                        end
+                    end
+                end
+            end
+
+            -- Fish Trap Contents
+            local dep = workspace:FindFirstChild("Deployables")
+            if dep then
+                for _, trap in ipairs(dep:GetChildren()) do
+                    if trap.Name == "Fish Trap" and trap:FindFirstChild("Contents") then
+                        local base = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
+                        if base and (base.Position - root.Position).Magnitude <= range then
+                            for _, item in ipairs(trap.Contents:GetChildren()) do
+                                if (item:IsA("BasePart") or item:IsA("MeshPart")) and item:GetAttribute("EntityID") then
+                                    if shouldPickup(item.Name) or item.Name == "Raw Fish" then
+                                        pickup(item:GetAttribute("EntityID"))
+                                    end
+                                end
                             end
                         end
                     end
                 end
             end
         end
-    end
-end
 
+        -- Chest pickup
         if Options.chestpickuptoggle.Value and root then
             local deployablesFolder = workspace:FindFirstChild("Deployables")
             if deployablesFolder then
@@ -892,7 +905,7 @@ end
                                     pickup(item:GetAttribute("EntityID"))
                                     count = count + 1
                                     if count % 3 == 0 then
-                                        task.wait(0.05)
+                                        task.wait(0.02)
                                     end
                                 end
                             end
