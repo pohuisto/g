@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "yawn", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -1056,13 +1056,29 @@ task.spawn(function()
 
     while true do
         if Options.itemdeletertoggle and Options.itemdeletertoggle.Value then
+            -- workspace.Items
             local folder = workspace:FindFirstChild("Items")
             if folder then
                 for _, item in ipairs(folder:GetChildren()) do
                     if shouldDelete(item.Name) then
-                        pcall(function()
-                            item:Destroy()
-                        end)
+                        pcall(function() item:Destroy() end)
+                    end
+                end
+            end
+
+            -- Deployables.Chest.Contents
+            local dep = workspace:FindFirstChild("Deployables")
+            if dep then
+                for _, chest in ipairs(dep:GetChildren()) do
+                    if chest.Name == "Chest" then
+                        local contents = chest:FindFirstChild("Contents")
+                        if contents then
+                            for _, item in ipairs(contents:GetChildren()) do
+                                if shouldDelete(item.Name) then
+                                    pcall(function() item:Destroy() end)
+                                end
+                            end
+                        end
                     end
                 end
             end
