@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "yawn!", SubTitle = "", TabWidth = 160,
+    Title = "datebayo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -1838,6 +1838,47 @@ task.spawn(function()
             currentlyLockedID = nil
          end
         task.wait(0.02)
+    end
+end)
+
+Tabs.Event:AddSection("Queen Ant")
+Tabs.Event:AddToggle("queenantsticktoggle", {
+    Title = "Stick To Queen Ant",
+    Default = false
+})
+
+local queenStickActive = false
+
+task.spawn(function()
+    while true do
+        if Options.queenantsticktoggle and Options.queenantsticktoggle.Value and root then
+            queenStickActive = true
+            local target = nil
+            local critters = workspace:FindFirstChild("Critters")
+            if critters then
+                for _, c in ipairs(critters:GetChildren()) do
+                    if c:IsA("Model") then
+                        local n = string.lower(c.Name)
+                        if n == "queen ant" or string.find(n, "queen ant") and not string.find(n, "servant") then
+                            local hum = c:FindFirstChildOfClass("Humanoid")
+                            local pp = c.PrimaryPart or c:FindFirstChild("HumanoidRootPart") or c:FindFirstChildWhichIsA("BasePart")
+                            if pp and (not hum or hum.Health > 0) then
+                                target = pp
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+            if target then
+                -- stand slightly in front so she can hit you
+                root.CFrame = target.CFrame * CFrame.new(0, 0, -4)
+            end
+            task.wait(0.05)
+        else
+            queenStickActive = false
+            task.wait(0.2)
+        end
     end
 end)
 
