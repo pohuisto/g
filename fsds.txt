@@ -1030,7 +1030,12 @@ Tabs.Pickup:AddDropdown("itemdeleterdropdown", {
 })
 
 Tabs.Pickup:AddToggle("itemdeletertoggle", {
-    Title = "Item Deleter (workspace.Items)",
+    Title = "Delete From workspace.Items",
+    Default = false
+})
+
+Tabs.Pickup:AddToggle("chestitemdeletertoggle", {
+    Title = "Delete From Chest.Contents",
     Default = false
 })
 
@@ -1046,17 +1051,17 @@ Options.itemdeleterdropdown:OnChanged(function(v)
     end
 end)
 
-task.spawn(function()
-    local function shouldDelete(name)
-        if #deleteSelected == 0 then
-            return true
-        end
-        return table.find(deleteSelected, name) ~= nil
+local function shouldDelete(name)
+    if #deleteSelected == 0 then
+        return true
     end
+    return table.find(deleteSelected, name) ~= nil
+end
 
+-- workspace.Items
+task.spawn(function()
     while true do
         if Options.itemdeletertoggle and Options.itemdeletertoggle.Value then
-            -- workspace.Items
             local folder = workspace:FindFirstChild("Items")
             if folder then
                 for _, item in ipairs(folder:GetChildren()) do
@@ -1065,8 +1070,15 @@ task.spawn(function()
                     end
                 end
             end
+        end
+        task.wait(0.2)
+    end
+end)
 
-            -- Deployables.Chest.Contents
+-- Deployables.Chest.Contents
+task.spawn(function()
+    while true do
+        if Options.chestitemdeletertoggle and Options.chestitemdeletertoggle.Value then
             local dep = workspace:FindFirstChild("Deployables")
             if dep then
                 for _, chest in ipairs(dep:GetChildren()) do
