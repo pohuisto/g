@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo!#!#", SubTitle = "", TabWidth = 160,
+    Title = "datebayo!!!!!!!!!!!!!!", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -313,22 +313,26 @@ Options.placefishtraptoggle:OnChanged(function(state)
     end
 end)
 
+-- ═══════════════════════════════════════════════════════════════
+-- FISH TRAP FARM — TELEPORT VERSION (no walking)
+-- ═══════════════════════════════════════════════════════════════
 Tabs.Farming:AddSection("Fish Trap Farm")
 Tabs.Farming:AddToggle("autofishtraptoggle", {
-    Title = "Auto Walk + Collect Fish Traps",
+    Title = "Auto Teleport + Collect Fish Traps",
     Default = false
 })
 Tabs.Farming:AddSlider("fishtraprangeslider", {
     Title = "Search Range",
-    Min = 50, Max = 500, Rounding = 1, Default = 250
+    Min = 50, Max = 800, Rounding = 1, Default = 300
 })
 
 local function getFishTrapsWithFish()
     local traps = {}
     local dep = workspace:FindFirstChild("Deployables")
-    if not dep or not root then return traps end
+    if not (dep and root) then return traps end
 
-    local range = tonumber(Options.fishtraprangeslider.Value) or 250
+    local range = tonumber(Options.fishtraprangeslider.Value) or 300
+    local rangeSq = range * range
     local charPos = root.Position
 
     for _, trap in ipairs(dep:GetChildren()) do
@@ -336,63 +340,75 @@ local function getFishTrapsWithFish()
             local contents = trap:FindFirstChild("Contents")
             if contents then
                 for _, item in ipairs(contents:GetChildren()) do
-                    if item.Name == "Raw Fish" and item:GetAttribute("EntityID") then
-                        local pp = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
-                        if pp then
-                            local dist = (pp.Position - charPos).Magnitude
-                            if dist <= range then
-                                table.insert(traps, {
-                                    trap = trap,
-                                    part = pp,
-                                    entityID = item:GetAttribute("EntityID"),
-                                    dist = dist
-                                })
+                    if item.Name == "Raw Fish" then
+                        local eid = item:GetAttribute("EntityID")
+                        if eid then
+                            local pp = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
+                            if pp then
+                                local delta = pp.Position - charPos
+                                local distSq = delta.X*delta.X + delta.Y*delta.Y + delta.Z*delta.Z
+                                if distSq <= rangeSq then
+                                    traps[#traps+1] = {
+                                        trap = trap,
+                                        part = pp,
+                                        entityID = eid,
+                                        distSq = distSq
+                                    }
+                                end
                             end
                         end
-                        break
+                        break -- only need one Raw Fish per trap
                     end
                 end
             end
         end
     end
 
-    table.sort(traps, function(a, b) return a.dist < b.dist end)
+    table.sort(traps, function(a, b) return a.distSq < b.distSq end)
     return traps
 end
 
 task.spawn(function()
+    local lastTeleport = 0
+    local TELEPORT_COOLDOWN = 0.22   -- prevents server position rubberbanding
+
     while true do
-        if Options.autofishtraptoggle and Options.autofishtraptoggle.Value and root and hum then
+        if Options.autofishtraptoggle and Options.autofishtraptoggle.Value and root then
             local traps = getFishTrapsWithFish()
+
             if #traps > 0 then
                 local target = traps[1]
-                -- Walk to the trap
-                while Options.autofishtraptoggle.Value and target.trap.Parent and root do
-                    local dist = (target.part.Position - root.Position).Magnitude
-                    if dist < 8 then
-                        -- Pick up the fish
-                        pcall(function()
-                            packets.Pickup.send(target.entityID)
-                        end)
-                        task.wait(0.15)
-                        break
-                    else
-                        hum:MoveTo(target.part.Position)
-                        task.wait(0.3)
-                    end
+                local now = tick()
+
+                if now - lastTeleport >= TELEPORT_COOLDOWN then
+                    -- Instant teleport 3.5–4.5 studs above the trap
+                    local offset = Vector3.new(
+                        math.random(-8, 8) * 0.1,   -- tiny random X/Z so you don’t land in the exact same spot every time
+                        4 + math.random() * 0.6,
+                        math.random(-8, 8) * 0.1
+                    )
+                    root.CFrame = CFrame.new(target.part.Position + offset)
+
+                    lastTeleport = now
+                    task.wait(0.11)   -- give the server one network tick to accept the new position
+
+                    -- Fire pickup
+                    pcall(function()
+                        packets.Pickup.send(target.entityID)
+                    end)
+
+                    task.wait(0.14)
                 end
             else
-                task.wait(0.8)
+                task.wait(0.55)
             end
         else
-            task.wait(0.4)
+            task.wait(0.3)
         end
-        task.wait(0.1)
+
+        task.wait(0.04)
     end
 end)
-
--- Also make Auto Pickup work on Fish Trap Contents
--- Add this inside your existing pickup loop (where it already checks chests)
 
 Tabs.Farming:AddSection("Bush Deleter")
 Tabs.Farming:AddToggle("bushdeletertoggle", {
