@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo!!!", SubTitle = "", TabWidth = 160,
+    Title = "datebayo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -881,12 +881,12 @@ task.spawn(function()
             local dep = workspace:FindFirstChild("Deployables")
             if dep then
                 for _, trap in ipairs(dep:GetChildren()) do
-                    if trap.Name == "Fish Trap" and trap:FindFirstChild("Contents") then
+                    if trap.Name == "Fish Trap" or == "Nest" and trap:FindFirstChild("Contents") then
                         local base = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
                         if base and (base.Position - root.Position).Magnitude <= range then
                             for _, item in ipairs(trap.Contents:GetChildren()) do
                                 if (item:IsA("BasePart") or item:IsA("MeshPart")) and item:GetAttribute("EntityID") then
-                                    if shouldPickup(item.Name) or item.Name == "Raw Fish" then
+                                    if shouldPickup(item.Name) or item.Name == "Raw Fish" or item.Name == "Egg" then
                                         pickup(item:GetAttribute("EntityID"))
                                     end
                                 end
@@ -1941,3 +1941,5 @@ task.wait(0.5)
 Library:Notify{Title = "", Content = "", Duration = 8}
 SaveManager:LoadAutoloadConfig()
 print("loaded")
+
+the autopickup does not pickup stuff from Nest it does work like Fish Trap
