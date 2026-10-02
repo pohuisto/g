@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayo?!", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -869,11 +869,11 @@ local function stopQueenServantAura()
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- HIGH-PERFORMANCE AUTO PICKUP
+-- HIGH-PERFORMANCE AUTO PICKUP (Items + Fish Trap + Nest)
 -- ═══════════════════════════════════════════════════════════════
-local MAX_PICKUPS_PER_FRAME   = 14          -- sweet spot before server starts dropping
-local SCAN_INTERVAL           = 0.25        -- rebuild candidate list this often
-local RETRY_COOLDOWN          = 0.55        -- don't re-fire same EntityID
+local MAX_PICKUPS_PER_FRAME   = 14
+local SCAN_INTERVAL           = 0.25
+local RETRY_COOLDOWN          = 0.55
 local CLEANUP_INTERVAL        = 1.2
 
 local lastScanTime            = 0
@@ -889,36 +889,75 @@ end
 
 local function rebuildCache(rangeSq)
     table.clear(cachedTargets)
-    local folder = workspace:FindFirstChild("Items")
-    if not folder or not root then return end
+    if not root then return end
 
     local charPos = root.Position
-    local children = folder:GetChildren()
-    local len = #children
 
-    -- linear scan, no intermediate tables until we know it's a candidate
-    for i = 1, len do
-        local item = children[i]
-        if item:IsA("BasePart") or item:IsA("MeshPart") then
-            local eid = item:GetAttribute("EntityID")
-            if eid and shouldPickup(item.Name) then
-                local p = item.Position
-                local dx = p.X - charPos.X
-                local dy = p.Y - charPos.Y
-                local dz = p.Z - charPos.Z
-                local distSq = dx*dx + dy*dy + dz*dz
-                if distSq <= rangeSq then
-                    cachedTargets[#cachedTargets+1] = {
-                        eid = eid,
-                        distSq = distSq,
-                        part = item
-                    }
+    -- 1. Normal items
+    local folder = workspace:FindFirstChild("Items")
+    if folder then
+        local children = folder:GetChildren()
+        for i = 1, #children do
+            local item = children[i]
+            if item:IsA("BasePart") or item:IsA("MeshPart") then
+                local eid = item:GetAttribute("EntityID")
+                if eid and shouldPickup(item.Name) then
+                    local p = item.Position
+                    local dx = p.X - charPos.X
+                    local dy = p.Y - charPos.Y
+                    local dz = p.Z - charPos.Z
+                    local distSq = dx*dx + dy*dy + dz*dz
+                    if distSq <= rangeSq then
+                        cachedTargets[#cachedTargets+1] = {
+                            eid = eid,
+                            distSq = distSq,
+                            part = item
+                        }
+                    end
                 end
             end
         end
     end
 
-    -- closest-first so we clear the pile under your feet first
+    -- 2. Fish Trap + Nest contents
+    local dep = workspace:FindFirstChild("Deployables")
+    if dep then
+        for _, trap in ipairs(dep:GetChildren()) do
+            if trap.Name == "Fish Trap" or trap.Name == "Nest" then
+                local contents = trap:FindFirstChild("Contents")
+                if contents then
+                    local base = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
+                    if base then
+                        local p = base.Position
+                        local dx = p.X - charPos.X
+                        local dy = p.Y - charPos.Y
+                        local dz = p.Z - charPos.Z
+                        local distSq = dx*dx + dy*dy + dz*dz
+
+                        if distSq <= rangeSq then
+                            for _, item in ipairs(contents:GetChildren()) do
+                                if item:IsA("BasePart") or item:IsA("MeshPart") then
+                                    local eid = item:GetAttribute("EntityID")
+                                    if eid then
+                                        -- Always pick Raw Fish & Egg, or anything selected
+                                        if shouldPickup(item.Name) or item.Name == "Raw Fish" or item.Name == "Egg" then
+                                            cachedTargets[#cachedTargets+1] = {
+                                                eid = eid,
+                                                distSq = distSq,
+                                                part = item
+                                            }
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- closest first
     table.sort(cachedTargets, function(a, b) return a.distSq < b.distSq end)
 end
 
@@ -929,20 +968,17 @@ task.spawn(function()
         local rangeSq = range * range
 
         if Options.autopickuptoggle.Value and root then
-            -- ─── rebuild only when needed ───────────────────────
             if now - lastScanTime >= SCAN_INTERVAL or #cachedTargets == 0 then
                 rebuildCache(rangeSq)
                 lastScanTime = now
             end
 
-            -- ─── process limited batch this frame ───────────────
             framePickCount = 0
             local i = 1
             local len = #cachedTargets
 
             while i <= len and framePickCount < MAX_PICKUPS_PER_FRAME do
                 local t = cachedTargets[i]
-                -- still exists + not recently tried
                 if t.part.Parent and (not recentlyTried[t.eid] or now - recentlyTried[t.eid] > RETRY_COOLDOWN) then
                     pickup(t.eid)
                     recentlyTried[t.eid] = now
@@ -951,7 +987,6 @@ task.spawn(function()
                 i = i + 1
             end
 
-            -- ─── periodic cleanup of dead entries ───────────────
             if now - lastCleanupTime > CLEANUP_INTERVAL then
                 for eid, t in pairs(recentlyTried) do
                     if now - t > RETRY_COOLDOWN * 2 then
@@ -961,19 +996,13 @@ task.spawn(function()
                 lastCleanupTime = now
             end
         else
-            -- toggle off → hard reset
             if #cachedTargets > 0 then
                 table.clear(cachedTargets)
                 table.clear(recentlyTried)
             end
         end
 
-        -- ─── Fish Trap / Nest / Chest (same rate limit) ─────────
-        -- (keep your existing Fish Trap + Nest + Chest code here,
-        --  but wrap the actual pickup() calls with the same
-        --  framePickCount < MAX_PICKUPS_PER_FRAME guard)
-
-        task.wait(0.028)   -- ~35 Hz is more than enough; 0.01 was pure overhead
+        task.wait(0.028)
     end
 end)
 
