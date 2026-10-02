@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayo!!!", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -877,25 +877,27 @@ task.spawn(function()
                 end
             end
 
-            -- Fish Trap Contents
-            local dep = workspace:FindFirstChild("Deployables")
-            if dep then
-                for _, trap in ipairs(dep:GetChildren()) do
-                    if trap.Name == "Fish Trap" or == "Nest" and trap:FindFirstChild("Contents") then
-                        local base = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
-                        if base and (base.Position - root.Position).Magnitude <= range then
-                            for _, item in ipairs(trap.Contents:GetChildren()) do
-                                if (item:IsA("BasePart") or item:IsA("MeshPart")) and item:GetAttribute("EntityID") then
-                                    if shouldPickup(item.Name) or item.Name == "Raw Fish" or item.Name == "Egg" then
-                                        pickup(item:GetAttribute("EntityID"))
-                                    end
-                                end
+-- Fish Trap + Nest Contents
+local dep = workspace:FindFirstChild("Deployables")
+if dep then
+    for _, trap in ipairs(dep:GetChildren()) do
+        if (trap.Name == "Fish Trap" or trap.Name == "Nest") then
+            local contents = trap:FindFirstChild("Contents")
+            if contents then
+                local base = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
+                if base and (base.Position - root.Position).Magnitude <= range then
+                    for _, item in ipairs(contents:GetChildren()) do
+                        if (item:IsA("BasePart") or item:IsA("MeshPart")) and item:GetAttribute("EntityID") then
+                            if shouldPickup(item.Name) or item.Name == "Raw Fish" or item.Name == "Egg" then
+                                pickup(item:GetAttribute("EntityID"))
                             end
                         end
                     end
                 end
             end
         end
+    end
+end
 
         -- Chest pickup
         if Options.chestpickuptoggle.Value and root then
