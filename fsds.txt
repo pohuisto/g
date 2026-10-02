@@ -1943,5 +1943,3 @@ task.wait(0.5)
 Library:Notify{Title = "", Content = "", Duration = 8}
 SaveManager:LoadAutoloadConfig()
 print("loaded")
-
-the autopickup does not pickup stuff from Nest it does work like Fish Trap
