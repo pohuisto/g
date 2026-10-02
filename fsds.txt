@@ -852,7 +852,7 @@ local function stopQueenServantAura()
     if queenServantConn then queenServantConn:Disconnect(); queenServantConn = nil end
 end
 
--- Full fixed Auto Pickup loop (replace your whole pickup task.spawn with this)
+-- Full fixed Auto Pickup loop (with Nest support)
 task.spawn(function()
     local function shouldPickup(name)
         if #selecteditems == 0 then
@@ -877,27 +877,29 @@ task.spawn(function()
                 end
             end
 
--- Fish Trap + Nest Contents
-local dep = workspace:FindFirstChild("Deployables")
-if dep then
-    for _, trap in ipairs(dep:GetChildren()) do
-        if (trap.Name == "Fish Trap" or trap.Name == "Nest") then
-            local contents = trap:FindFirstChild("Contents")
-            if contents then
-                local base = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
-                if base and (base.Position - root.Position).Magnitude <= range then
-                    for _, item in ipairs(contents:GetChildren()) do
-                        if (item:IsA("BasePart") or item:IsA("MeshPart")) and item:GetAttribute("EntityID") then
-                            if shouldPickup(item.Name) or item.Name == "Raw Fish" or item.Name == "Egg" then
-                                pickup(item:GetAttribute("EntityID"))
+            -- Fish Trap + Nest Contents
+            local dep = workspace:FindFirstChild("Deployables")
+            if dep then
+                for _, trap in ipairs(dep:GetChildren()) do
+                    if trap.Name == "Fish Trap" or trap.Name == "Nest" then
+                        local contents = trap:FindFirstChild("Contents")
+                        if contents then
+                            local base = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
+                            if base and (base.Position - root.Position).Magnitude <= range then
+                                for _, item in ipairs(contents:GetChildren()) do
+                                    if (item:IsA("BasePart") or item:IsA("MeshPart")) and item:GetAttribute("EntityID") then
+                                        -- Auto-pickup Raw Fish from Fish Trap and Egg from Nest
+                                        if shouldPickup(item.Name) or item.Name == "Raw Fish" or item.Name == "Egg" then
+                                            pickup(item:GetAttribute("EntityID"))
+                                        end
+                                    end
+                                end
                             end
                         end
                     end
                 end
             end
         end
-    end
-end
 
         -- Chest pickup
         if Options.chestpickuptoggle.Value and root then
@@ -1932,7 +1934,7 @@ Tabs.Event:AddToggle("tpsoulminionstoggle", { Title = "Tp Prioritized Targets", 
 SaveManager:SetLibrary(Library)
 InterfaceManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()
-SaveManager:SetIgnoreIndexes({}) -- FIXED: Added parentheses
+SaveManager:SetIgnoreIndexes{}
 InterfaceManager:SetFolder("FluentScriptHub")
 SaveManager:SetFolder("FluentScriptHub/specific-game")
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
