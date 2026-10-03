@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayoooo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -1127,6 +1127,34 @@ Tabs.Pickup:AddToggle("chestitemdeletertoggle", {
     Title = "Delete From Chest.Contents",
     Default = false
 })
+
+Tabs.Pickup:AddToggle("trapitemdeletertoggle", {
+    Title = "Delete From Fish Trap / Nest Contents",
+    Default = false
+})
+
+task.spawn(function()
+    while true do
+        if Options.trapitemdeletertoggle and Options.trapitemdeletertoggle.Value then
+            local dep = workspace:FindFirstChild("Deployables")
+            if dep then
+                for _, obj in ipairs(dep:GetChildren()) do
+                    if obj.Name == "Fish Trap" or obj.Name == "Nest" then
+                        local contents = obj:FindFirstChild("Contents")
+                        if contents then
+                            for _, item in ipairs(contents:GetChildren()) do
+                                if shouldDelete(item.Name) then
+                                    pcall(function() item:Destroy() end)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.2)
+    end
+end)
 
 local deleteSelected = {}
 Options.itemdeleterdropdown:OnChanged(function(v)
