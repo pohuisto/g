@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayohe", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -872,7 +872,7 @@ end
 -- HIGH-PERFORMANCE AUTO PICKUP (Items + Fish Trap + Nest)
 -- ═══════════════════════════════════════════════════════════════
 local MAX_PICKUPS_PER_FRAME   = 67
-local SCAN_INTERVAL           = 0.25
+local SCAN_INTERVAL           = 0.02
 local RETRY_COOLDOWN          = 0.55
 local CLEANUP_INTERVAL        = 1.2
 
