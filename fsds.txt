@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayoezz", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -985,36 +985,79 @@ task.spawn(function()
     end
 end)
 
--- traps/nests (few objects, safe to scan)
+-- TRAPS / NESTS — spatial only (safe with 50k+)
+local TRAP_EVERY   = 0.2
+local TRAP_BUDGET  = 8
+local trapTried    = {}
+local lastTrap     = 0
+
+local trapOverlap = OverlapParams.new()
+trapOverlap.FilterType = Enum.RaycastFilterType.Include
+trapOverlap.MaxParts = 60
+
+local function pickupNearbyTraps()
+    if not root then return end
+    local dep = workspace:FindFirstChild("Deployables")
+    if not dep then return end
+
+    local range = tonumber(Options.pickuprange.Value) or 35
+    trapOverlap.FilterDescendantsInstances = { dep }
+
+    local parts = workspace:GetPartBoundsInRadius(root.Position, range, trapOverlap)
+    local now = tick()
+    local sent = 0
+    local seen = {}
+
+    for i = 1, #parts do
+        if sent >= TRAP_BUDGET then break end
+
+        local part = parts[i]
+        local trap = part:FindFirstAncestorWhichIsA("Model")
+        if not trap then continue end
+        if seen[trap] then continue end
+        seen[trap] = true
+
+        local n = trap.Name
+        if n ~= "Fish Trap" and n ~= "Nest" then continue end
+
+        local contents = trap:FindFirstChild("Contents")
+        if not contents then continue end
+
+        for _, item in ipairs(contents:GetChildren()) do
+            if sent >= TRAP_BUDGET then break end
+            local eid = item:GetAttribute("EntityID")
+            if not eid then continue end
+
+            local name = item.Name
+            if name == "Raw Fish" or name == "Egg" or shouldPickup(name) then
+                local prev = trapTried[eid]
+                if not prev or now - prev >= 0.7 then
+                    pickup(eid)
+                    trapTried[eid] = now
+                    sent += 1
+                end
+            end
+        end
+    end
+end
+
 task.spawn(function()
     while true do
         if Options.autopickuptoggle and Options.autopickuptoggle.Value and root then
-            local range = tonumber(Options.pickuprange.Value) or 35
-            local rangeSq = range * range
-            local pos = root.Position
-            local dep = workspace:FindFirstChild("Deployables")
-            if dep then
-                for _, trap in ipairs(dep:GetChildren()) do
-                    if trap.Name == "Fish Trap" or trap.Name == "Nest" then
-                        local base = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
-                        local contents = trap:FindFirstChild("Contents")
-                        if base and contents then
-                            local d = base.Position - pos
-                            if d.X*d.X + d.Y*d.Y + d.Z*d.Z <= rangeSq then
-                                for _, item in ipairs(contents:GetChildren()) do
-                                    local eid = item:GetAttribute("EntityID")
-                                    if eid and (shouldPickup(item.Name) or item.Name == "Raw Fish" or item.Name == "Egg") then
-                                        pickup(eid)
-                                    end
-                                end
-                            end
-                        end
-                    end
+            local now = tick()
+            if now - lastTrap >= TRAP_EVERY then
+                pickupNearbyTraps()
+                lastTrap = now
+            end
+            if now % 5 < 0.05 then
+                for eid, t in pairs(trapTried) do
+                    if now - t > 2 then trapTried[eid] = nil end
                 end
             end
-            task.wait(0.15)
+            task.wait(0.05)
         else
-            task.wait(0.3)
+            table.clear(trapTried)
+            task.wait(0.25)
         end
     end
 end)
