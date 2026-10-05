@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayowo", SubTitle = "", TabWidth = 160,
+    Title = "datebayogrr", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -868,81 +868,81 @@ local function stopQueenServantAura()
     if queenServantConn then queenServantConn:Disconnect(); queenServantConn = nil end
 end
 
--- FAST + LOW LAG AUTO PICKUP
-local PICK_BUDGET      = 18      -- max packets per pulse
-local PULSE            = 0.05    -- how often we send
-local FULL_SCAN_EVERY  = 0.25    -- full rebuild
-local NEAR_SCAN_EVERY  = 0.08    -- quick refresh of near items
-local RETRY            = 0.6
-local MAX_CACHE        = 120
+-- FAST PICKUP FOR 10K+ ITEMS (spatial, no full folder scan)
+local PICK_BUDGET = 20
+local PULSE       = 0.05
+local RETRY       = 0.55
+local SCAN_EVERY  = 0.12
 
-local pickupCache      = {}
-local tried            = {}
-local itemsFolder      = nil
-local depFolder        = nil
-local lastFullScan     = 0
-local lastNearScan     = 0
-local lastPulse        = 0
-local lastCleanup      = 0
-local dirty            = true
+local tried       = {}
+local lastPulse   = 0
+local lastScan    = 0
+local lastCleanup = 0
+local nearList    = {}
+
+local overlap = OverlapParams.new()
+overlap.FilterType = Enum.RaycastFilterType.Include
+overlap.MaxParts = 200
 
 local function shouldPickup(name)
     if #selecteditems == 0 then return true end
     return table.find(selecteditems, name) ~= nil
 end
 
-local function ensureFolders()
-    if not itemsFolder or not itemsFolder.Parent then
-        itemsFolder = workspace:FindFirstChild("Items")
-        dirty = true
-    end
-    if not depFolder or not depFolder.Parent then
-        depFolder = workspace:FindFirstChild("Deployables")
-        dirty = true
-    end
-end
+local function refreshNear(range)
+    table.clear(nearList)
+    if not root then return end
 
-local function push(list, eid, distSq, part)
-    if #list >= MAX_CACHE then return end
-    list[#list + 1] = { eid = eid, distSq = distSq, part = part }
-end
-
-local function scanItems(charPos, rangeSq, list)
+    local itemsFolder = workspace:FindFirstChild("Items")
     if not itemsFolder then return end
-    for _, item in ipairs(itemsFolder:GetChildren()) do
-        if #list >= MAX_CACHE then return end
-        if item:IsA("BasePart") or item:IsA("MeshPart") then
+
+    overlap.FilterDescendantsInstances = { itemsFolder }
+
+    local parts = workspace:GetPartBoundsInRadius(root.Position, range, overlap)
+    local pos = root.Position
+
+    for i = 1, #parts do
+        local item = parts[i]
+        if item:IsA("BasePart") then
             local eid = item:GetAttribute("EntityID")
             if eid and shouldPickup(item.Name) then
                 local p = item.Position
-                local dx, dy, dz = p.X - charPos.X, p.Y - charPos.Y, p.Z - charPos.Z
-                local d = dx*dx + dy*dy + dz*dz
-                if d <= rangeSq then
-                    push(list, eid, d, item)
-                end
+                local dx, dy, dz = p.X - pos.X, p.Y - pos.Y, p.Z - pos.Z
+                nearList[#nearList + 1] = {
+                    eid = eid,
+                    distSq = dx*dx + dy*dy + dz*dz,
+                    part = item
+                }
             end
         end
     end
+
+    if #nearList > 1 then
+        table.sort(nearList, function(a, b) return a.distSq < b.distSq end)
+    end
 end
 
-local function scanTraps(charPos, rangeSq, list)
-    if not depFolder then return end
-    for _, trap in ipairs(depFolder:GetChildren()) do
-        if #list >= MAX_CACHE then return end
+local function refreshTraps(range)
+    local dep = workspace:FindFirstChild("Deployables")
+    if not (dep and root) then return end
+
+    local pos = root.Position
+    local rangeSq = range * range
+
+    for _, trap in ipairs(dep:GetChildren()) do
         if trap.Name == "Fish Trap" or trap.Name == "Nest" then
             local contents = trap:FindFirstChild("Contents")
             local base = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
             if contents and base then
                 local p = base.Position
-                local dx, dy, dz = p.X - charPos.X, p.Y - charPos.Y, p.Z - charPos.Z
+                local dx, dy, dz = p.X - pos.X, p.Y - pos.Y, p.Z - pos.Z
                 local d = dx*dx + dy*dy + dz*dz
                 if d <= rangeSq then
                     for _, item in ipairs(contents:GetChildren()) do
-                        if #list >= MAX_CACHE then return end
                         if item:IsA("BasePart") or item:IsA("MeshPart") then
                             local eid = item:GetAttribute("EntityID")
                             if eid and (shouldPickup(item.Name) or item.Name == "Raw Fish" or item.Name == "Egg") then
-                                push(list, eid, d, item)
+                                nearList[#nearList + 1] = { eid = eid, distSq = d, part = item }
                             end
                         end
                     end
@@ -952,72 +952,29 @@ local function scanTraps(charPos, rangeSq, list)
     end
 end
 
-local function rebuild(range)
-    ensureFolders()
-    local list = {}
-    if not root then
-        pickupCache = list
-        return
-    end
-    local charPos = root.Position
-    local rangeSq = range * range
-    scanItems(charPos, rangeSq, list)
-    scanTraps(charPos, rangeSq, list)
-    if #list > 1 then
-        table.sort(list, function(a, b) return a.distSq < b.distSq end)
-    end
-    pickupCache = list
-    dirty = false
-end
-
--- listen for new items so we don't need ultra-fast full scans
-task.defer(function()
-    ensureFolders()
-    if itemsFolder then
-        itemsFolder.ChildAdded:Connect(function() dirty = true end)
-        itemsFolder.ChildRemoved:Connect(function() dirty = true end)
-    end
-    workspace.ChildAdded:Connect(function(c)
-        if c.Name == "Items" or c.Name == "Deployables" then dirty = true end
-    end)
-end)
-
 task.spawn(function()
     while true do
         if not (Options.autopickuptoggle and Options.autopickuptoggle.Value and root) then
-            if #pickupCache > 0 then
-                table.clear(pickupCache)
-                table.clear(tried)
-            end
-            task.wait(0.12)
+            table.clear(nearList)
+            table.clear(tried)
+            task.wait(0.15)
             continue
         end
 
         local now = tick()
         local range = tonumber(Options.pickuprange.Value) or 35
 
-        if dirty or now - lastFullScan >= FULL_SCAN_EVERY then
-            rebuild(range)
-            lastFullScan = now
-            lastNearScan = now
-        elseif now - lastNearScan >= NEAR_SCAN_EVERY then
-            -- light pass: drop dead refs only
-            local alive = {}
-            for i = 1, #pickupCache do
-                local t = pickupCache[i]
-                if t.part and t.part.Parent then
-                    alive[#alive + 1] = t
-                end
-            end
-            pickupCache = alive
-            lastNearScan = now
+        if now - lastScan >= SCAN_EVERY then
+            refreshNear(range)
+            refreshTraps(range)
+            lastScan = now
         end
 
-        if now - lastPulse >= PULSE and #pickupCache > 0 then
+        if now - lastPulse >= PULSE and #nearList > 0 then
             local sent = 0
-            for i = 1, #pickupCache do
+            for i = 1, #nearList do
                 if sent >= PICK_BUDGET then break end
-                local t = pickupCache[i]
+                local t = nearList[i]
                 if t.part and t.part.Parent then
                     local last = tried[t.eid]
                     if not last or now - last >= RETRY then
@@ -1030,7 +987,7 @@ task.spawn(function()
             lastPulse = now
         end
 
-        if now - lastCleanup >= 2 then
+        if now - lastCleanup > 2 then
             for eid, t in pairs(tried) do
                 if now - t > RETRY * 2 then tried[eid] = nil end
             end
@@ -1041,7 +998,7 @@ task.spawn(function()
     end
 end)
 
--- chests: separate, slower, still fast enough
+-- chests separate
 task.spawn(function()
     while true do
         if Options.chestpickuptoggle and Options.chestpickuptoggle.Value and root then
@@ -1062,25 +1019,23 @@ task.spawn(function()
                             if dx*dx + dy*dy + dz*dz <= rangeSq then
                                 for _, item in ipairs(contents:GetChildren()) do
                                     if not Options.chestpickuptoggle.Value then break end
-                                    if item:IsA("BasePart") or item:IsA("MeshPart") then
-                                        local eid = item:GetAttribute("EntityID")
-                                        if eid and shouldPickup(item.Name) then
-                                            pickup(eid)
-                                            sent += 1
-                                            if sent % 10 == 0 then task.wait() end
-                                            if sent >= 30 then break end
-                                        end
+                                    local eid = item:GetAttribute("EntityID")
+                                    if eid and shouldPickup(item.Name) then
+                                        pickup(eid)
+                                        sent += 1
+                                        if sent % 10 == 0 then task.wait() end
+                                        if sent >= 25 then break end
                                     end
                                 end
                             end
                         end
                     end
-                    if sent >= 30 then break end
+                    if sent >= 25 then break end
                 end
             end
-            task.wait(0.1)
+            task.wait(0.12)
         else
-            task.wait(0.2)
+            task.wait(0.25)
         end
     end
 end)
