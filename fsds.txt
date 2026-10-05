@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayoawn", SubTitle = "", TabWidth = 160,
+    Title = "datebayo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -1059,6 +1059,35 @@ task.spawn(function()
             table.clear(trapTried)
             task.wait(0.25)
         end
+    end
+end)
+
+        if Options.chestpickuptoggle.Value and root then
+            local deployablesFolder = workspace:FindFirstChild("Deployables")
+            if deployablesFolder then
+                local count = 0
+                for _, chest in ipairs(deployablesFolder:GetChildren()) do
+                    if not Options.chestpickuptoggle.Value then break end
+                    if chest:IsA("Model") and chest.Name == "Chest" and chest:FindFirstChild("Contents") then
+                        local base = chest.PrimaryPart or chest:FindFirstChildWhichIsA("BasePart")
+                        if base and (base.Position - root.Position).Magnitude <= range then
+                            for _, item in ipairs(chest.Contents:GetChildren()) do
+                                if not Options.chestpickuptoggle.Value then break end
+                                if (item:IsA("BasePart") or item:IsA("MeshPart")) and item:GetAttribute("EntityID") and shouldPickup(item.Name) then
+                                    pickup(item:GetAttribute("EntityID"))
+                                    count = count + 1
+                                    if count % 3 == 0 then
+                                        task.wait(0.02)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        task.wait(0.01)
     end
 end)
 
