@@ -1059,8 +1059,6 @@ task.spawn(function()
             table.clear(trapTried)
             task.wait(0.25)
         end
-    end
-end)
 
         if Options.chestpickuptoggle.Value and root then
             local deployablesFolder = workspace:FindFirstChild("Deployables")
