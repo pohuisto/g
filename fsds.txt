@@ -1059,36 +1059,88 @@ task.spawn(function()
             table.clear(trapTried)
             task.wait(0.25)
         end
-
-        if Options.chestpickuptoggle.Value and root then
-            local deployablesFolder = workspace:FindFirstChild("Deployables")
-            if deployablesFolder then
-                local count = 0
-                for _, chest in ipairs(deployablesFolder:GetChildren()) do
-                    if not Options.chestpickuptoggle.Value then break end
-                    if chest:IsA("Model") and chest.Name == "Chest" and chest:FindFirstChild("Contents") then
-                        local base = chest.PrimaryPart or chest:FindFirstChildWhichIsA("BasePart")
-                        if base and (base.Position - root.Position).Magnitude <= range then
-                            for _, item in ipairs(chest.Contents:GetChildren()) do
-                                if not Options.chestpickuptoggle.Value then break end
-                                if (item:IsA("BasePart") or item:IsA("MeshPart")) and item:GetAttribute("EntityID") and shouldPickup(item.Name) then
-                                    pickup(item:GetAttribute("EntityID"))
-                                    count = count + 1
-                                    if count % 3 == 0 then
-                                        task.wait(0.02)
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-
-        task.wait(0.01)
     end
 end)
 
+-- CHEST PICKUP
+local CHEST_EVERY = 0.2
+local CHEST_BUDGET = 10
+local chestTried = {}
+local lastChest = 0
+
+local function pickupNearbyChests()
+    if not root then return end
+    local dep = workspace:FindFirstChild("Deployables")
+    if not dep then return end
+
+    local range = tonumber(Options.pickuprange.Value) or 35
+    local rangeSq = range * range
+    local pos = root.Position
+    local now = tick()
+    local sent = 0
+
+    for _, chest in ipairs(dep:GetChildren()) do
+        if sent >= CHEST_BUDGET then break end
+        if chest.Name ~= "Chest" then continue end
+
+        local base = chest.PrimaryPart or chest:FindFirstChild("Base") or chest:FindFirstChildWhichIsA("BasePart")
+        if not base then continue end
+
+        local delta = base.Position - pos
+        if delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z > rangeSq then continue end
+
+        local contents = chest:FindFirstChild("Contents")
+        if not contents then continue end
+
+        for _, item in ipairs(contents:GetChildren()) do
+            if sent >= CHEST_BUDGET then break end
+            local eid = item:GetAttribute("EntityID")
+            if not eid then continue end
+
+            if shouldPickup(item.Name) then
+                local prev = chestTried[eid]
+                if not prev or now - prev >= 0.7 then
+                    pickup(eid)
+                    chestTried[eid] = now
+                    sent += 1
+                end
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        if Options.chestpickuptoggle and Options.chestpickuptoggle.Value and root then
+            local now = tick()
+            if now - lastChest >= CHEST_EVERY then
+                pickupNearbyChests()
+                lastChest = now
+            end
+            if now % 5 < 0.05 then
+                for eid, t in pairs(chestTried) do
+                    if now - t > 2 then chestTried[eid] = nil end
+                end
+            end
+            task.wait(0.05)
+        else
+            table.clear(chestTried)
+            task.wait(0.25)
+        end
+    end
+end)
+
+-- Drop loops
+local debounce = 0
+local cd = 0
+runs.Heartbeat:Connect(function()
+    if Options.droptoggle.Value then
+        if tick() - debounce >= cd then
+            drop(Options.dropdropdown.Value)
+            debounce = tick()
+        end
+    end
+end)
 
 runs.Heartbeat:Connect(function()
     if Options.droptogglemanual.Value then
