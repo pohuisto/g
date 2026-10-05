@@ -1089,17 +1089,6 @@ task.spawn(function()
     end
 end)
 
--- Drop loops
-local debounce = 0
-local cd = 0
-runs.Heartbeat:Connect(function()
-    if Options.droptoggle.Value then
-        if tick() - debounce >= cd then
-            drop(Options.dropdropdown.Value)
-            debounce = tick()
-        end
-    end
-end)
 
 runs.Heartbeat:Connect(function()
     if Options.droptogglemanual.Value then
