@@ -34,7 +34,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayohe", SubTitle = "", TabWidth = 160,
+    Title = "datebayowo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -868,174 +868,222 @@ local function stopQueenServantAura()
     if queenServantConn then queenServantConn:Disconnect(); queenServantConn = nil end
 end
 
--- ═══════════════════════════════════════════════════════════════
--- HIGH-PERFORMANCE AUTO PICKUP (Items + Fish Trap + Nest)
--- ═══════════════════════════════════════════════════════════════
-local MAX_PICKUPS_PER_FRAME   = 67
-local SCAN_INTERVAL           = 0.02
-local RETRY_COOLDOWN          = 0.55
-local CLEANUP_INTERVAL        = 1.2
+-- FAST + LOW LAG AUTO PICKUP
+local PICK_BUDGET      = 18      -- max packets per pulse
+local PULSE            = 0.05    -- how often we send
+local FULL_SCAN_EVERY  = 0.25    -- full rebuild
+local NEAR_SCAN_EVERY  = 0.08    -- quick refresh of near items
+local RETRY            = 0.6
+local MAX_CACHE        = 120
 
-local lastScanTime            = 0
-local lastCleanupTime         = 0
-local cachedTargets           = {}          -- {eid, distSq, part}
-local recentlyTried           = {}          -- eid → lastSendTime
-local framePickCount          = 0
+local pickupCache      = {}
+local tried            = {}
+local itemsFolder      = nil
+local depFolder        = nil
+local lastFullScan     = 0
+local lastNearScan     = 0
+local lastPulse        = 0
+local lastCleanup      = 0
+local dirty            = true
 
 local function shouldPickup(name)
     if #selecteditems == 0 then return true end
     return table.find(selecteditems, name) ~= nil
 end
 
-local function rebuildCache(rangeSq)
-    table.clear(cachedTargets)
-    if not root then return end
+local function ensureFolders()
+    if not itemsFolder or not itemsFolder.Parent then
+        itemsFolder = workspace:FindFirstChild("Items")
+        dirty = true
+    end
+    if not depFolder or not depFolder.Parent then
+        depFolder = workspace:FindFirstChild("Deployables")
+        dirty = true
+    end
+end
 
-    local charPos = root.Position
+local function push(list, eid, distSq, part)
+    if #list >= MAX_CACHE then return end
+    list[#list + 1] = { eid = eid, distSq = distSq, part = part }
+end
 
-    -- 1. Normal items
-    local folder = workspace:FindFirstChild("Items")
-    if folder then
-        local children = folder:GetChildren()
-        for i = 1, #children do
-            local item = children[i]
-            if item:IsA("BasePart") or item:IsA("MeshPart") then
-                local eid = item:GetAttribute("EntityID")
-                if eid and shouldPickup(item.Name) then
-                    local p = item.Position
-                    local dx = p.X - charPos.X
-                    local dy = p.Y - charPos.Y
-                    local dz = p.Z - charPos.Z
-                    local distSq = dx*dx + dy*dy + dz*dz
-                    if distSq <= rangeSq then
-                        cachedTargets[#cachedTargets+1] = {
-                            eid = eid,
-                            distSq = distSq,
-                            part = item
-                        }
+local function scanItems(charPos, rangeSq, list)
+    if not itemsFolder then return end
+    for _, item in ipairs(itemsFolder:GetChildren()) do
+        if #list >= MAX_CACHE then return end
+        if item:IsA("BasePart") or item:IsA("MeshPart") then
+            local eid = item:GetAttribute("EntityID")
+            if eid and shouldPickup(item.Name) then
+                local p = item.Position
+                local dx, dy, dz = p.X - charPos.X, p.Y - charPos.Y, p.Z - charPos.Z
+                local d = dx*dx + dy*dy + dz*dz
+                if d <= rangeSq then
+                    push(list, eid, d, item)
+                end
+            end
+        end
+    end
+end
+
+local function scanTraps(charPos, rangeSq, list)
+    if not depFolder then return end
+    for _, trap in ipairs(depFolder:GetChildren()) do
+        if #list >= MAX_CACHE then return end
+        if trap.Name == "Fish Trap" or trap.Name == "Nest" then
+            local contents = trap:FindFirstChild("Contents")
+            local base = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
+            if contents and base then
+                local p = base.Position
+                local dx, dy, dz = p.X - charPos.X, p.Y - charPos.Y, p.Z - charPos.Z
+                local d = dx*dx + dy*dy + dz*dz
+                if d <= rangeSq then
+                    for _, item in ipairs(contents:GetChildren()) do
+                        if #list >= MAX_CACHE then return end
+                        if item:IsA("BasePart") or item:IsA("MeshPart") then
+                            local eid = item:GetAttribute("EntityID")
+                            if eid and (shouldPickup(item.Name) or item.Name == "Raw Fish" or item.Name == "Egg") then
+                                push(list, eid, d, item)
+                            end
+                        end
                     end
                 end
             end
         end
     end
+end
 
-    -- 2. Fish Trap + Nest contents
-    local dep = workspace:FindFirstChild("Deployables")
-    if dep then
-        for _, trap in ipairs(dep:GetChildren()) do
-            if trap.Name == "Fish Trap" or trap.Name == "Nest" then
-                local contents = trap:FindFirstChild("Contents")
-                if contents then
-                    local base = trap.PrimaryPart or trap:FindFirstChildWhichIsA("BasePart")
-                    if base then
-                        local p = base.Position
-                        local dx = p.X - charPos.X
-                        local dy = p.Y - charPos.Y
-                        local dz = p.Z - charPos.Z
-                        local distSq = dx*dx + dy*dy + dz*dz
+local function rebuild(range)
+    ensureFolders()
+    local list = {}
+    if not root then
+        pickupCache = list
+        return
+    end
+    local charPos = root.Position
+    local rangeSq = range * range
+    scanItems(charPos, rangeSq, list)
+    scanTraps(charPos, rangeSq, list)
+    if #list > 1 then
+        table.sort(list, function(a, b) return a.distSq < b.distSq end)
+    end
+    pickupCache = list
+    dirty = false
+end
 
-                        if distSq <= rangeSq then
-                            for _, item in ipairs(contents:GetChildren()) do
-                                if item:IsA("BasePart") or item:IsA("MeshPart") then
-                                    local eid = item:GetAttribute("EntityID")
-                                    if eid then
-                                        -- Always pick Raw Fish & Egg, or anything selected
-                                        if shouldPickup(item.Name) or item.Name == "Raw Fish" or item.Name == "Egg" then
-                                            cachedTargets[#cachedTargets+1] = {
-                                                eid = eid,
-                                                distSq = distSq,
-                                                part = item
-                                            }
+-- listen for new items so we don't need ultra-fast full scans
+task.defer(function()
+    ensureFolders()
+    if itemsFolder then
+        itemsFolder.ChildAdded:Connect(function() dirty = true end)
+        itemsFolder.ChildRemoved:Connect(function() dirty = true end)
+    end
+    workspace.ChildAdded:Connect(function(c)
+        if c.Name == "Items" or c.Name == "Deployables" then dirty = true end
+    end)
+end)
+
+task.spawn(function()
+    while true do
+        if not (Options.autopickuptoggle and Options.autopickuptoggle.Value and root) then
+            if #pickupCache > 0 then
+                table.clear(pickupCache)
+                table.clear(tried)
+            end
+            task.wait(0.12)
+            continue
+        end
+
+        local now = tick()
+        local range = tonumber(Options.pickuprange.Value) or 35
+
+        if dirty or now - lastFullScan >= FULL_SCAN_EVERY then
+            rebuild(range)
+            lastFullScan = now
+            lastNearScan = now
+        elseif now - lastNearScan >= NEAR_SCAN_EVERY then
+            -- light pass: drop dead refs only
+            local alive = {}
+            for i = 1, #pickupCache do
+                local t = pickupCache[i]
+                if t.part and t.part.Parent then
+                    alive[#alive + 1] = t
+                end
+            end
+            pickupCache = alive
+            lastNearScan = now
+        end
+
+        if now - lastPulse >= PULSE and #pickupCache > 0 then
+            local sent = 0
+            for i = 1, #pickupCache do
+                if sent >= PICK_BUDGET then break end
+                local t = pickupCache[i]
+                if t.part and t.part.Parent then
+                    local last = tried[t.eid]
+                    if not last or now - last >= RETRY then
+                        pickup(t.eid)
+                        tried[t.eid] = now
+                        sent += 1
+                    end
+                end
+            end
+            lastPulse = now
+        end
+
+        if now - lastCleanup >= 2 then
+            for eid, t in pairs(tried) do
+                if now - t > RETRY * 2 then tried[eid] = nil end
+            end
+            lastCleanup = now
+        end
+
+        task.wait(0.02)
+    end
+end)
+
+-- chests: separate, slower, still fast enough
+task.spawn(function()
+    while true do
+        if Options.chestpickuptoggle and Options.chestpickuptoggle.Value and root then
+            local range = tonumber(Options.pickuprange.Value) or 35
+            local rangeSq = range * range
+            local pos = root.Position
+            local dep = workspace:FindFirstChild("Deployables")
+            local sent = 0
+            if dep then
+                for _, chest in ipairs(dep:GetChildren()) do
+                    if not Options.chestpickuptoggle.Value then break end
+                    if chest.Name == "Chest" then
+                        local contents = chest:FindFirstChild("Contents")
+                        local base = chest.PrimaryPart or chest:FindFirstChildWhichIsA("BasePart")
+                        if contents and base then
+                            local p = base.Position
+                            local dx, dy, dz = p.X - pos.X, p.Y - pos.Y, p.Z - pos.Z
+                            if dx*dx + dy*dy + dz*dz <= rangeSq then
+                                for _, item in ipairs(contents:GetChildren()) do
+                                    if not Options.chestpickuptoggle.Value then break end
+                                    if item:IsA("BasePart") or item:IsA("MeshPart") then
+                                        local eid = item:GetAttribute("EntityID")
+                                        if eid and shouldPickup(item.Name) then
+                                            pickup(eid)
+                                            sent += 1
+                                            if sent % 10 == 0 then task.wait() end
+                                            if sent >= 30 then break end
                                         end
                                     end
                                 end
                             end
                         end
                     end
+                    if sent >= 30 then break end
                 end
             end
-        end
-    end
-
-    -- closest first
-    table.sort(cachedTargets, function(a, b) return a.distSq < b.distSq end)
-end
-
-task.spawn(function()
-    while true do
-        local now = tick()
-        local range = tonumber(Options.pickuprange.Value) or 35
-        local rangeSq = range * range
-
-        -- Auto pickup
-        if Options.autopickuptoggle.Value and root then
-            if now - lastScanTime >= SCAN_INTERVAL or #cachedTargets == 0 then
-                rebuildCache(rangeSq)
-                lastScanTime = now
-            end
-
-            framePickCount = 0
-            local i = 1
-            local len = #cachedTargets
-
-            while i <= len and framePickCount < MAX_PICKUPS_PER_FRAME do
-                local t = cachedTargets[i]
-                if t.part.Parent and (not recentlyTried[t.eid] or now - recentlyTried[t.eid] > RETRY_COOLDOWN) then
-                    pickup(t.eid)
-                    recentlyTried[t.eid] = now
-                    framePickCount = framePickCount + 1
-                end
-                i = i + 1
-            end
-
-            if now - lastCleanupTime > CLEANUP_INTERVAL then
-                for eid, t in pairs(recentlyTried) do
-                    if now - t > RETRY_COOLDOWN * 2 then
-                        recentlyTried[eid] = nil
-                    end
-                end
-                lastCleanupTime = now
-            end
+            task.wait(0.1)
         else
-            if #cachedTargets > 0 then
-                table.clear(cachedTargets)
-                table.clear(recentlyTried)
-            end
+            task.wait(0.2)
         end
-
-        -- Chest pickup
-        if Options.chestpickuptoggle.Value and root then
-            local deployablesFolder = workspace:FindFirstChild("Deployables")
-            if deployablesFolder then
-                local count = 0
-                for _, chest in ipairs(deployablesFolder:GetChildren()) do
-                    if not Options.chestpickuptoggle.Value then break end
-                    if chest:IsA("Model") and chest.Name == "Chest" and chest:FindFirstChild("Contents") then
-                        local base = chest.PrimaryPart or chest:FindFirstChildWhichIsA("BasePart")
-                        if base and (base.Position - root.Position).Magnitude <= range then
-                            for _, item in ipairs(chest.Contents:GetChildren()) do
-                                if not Options.chestpickuptoggle.Value then break end
-                                if (item:IsA("BasePart") or item:IsA("MeshPart"))
-                                    and item:GetAttribute("EntityID")
-                                    and shouldPickup(item.Name)
-                                then
-                                    pickup(item:GetAttribute("EntityID"))
-                                    count = count + 1
-                                    if count % 3 == 0 then
-                                        task.wait(0.02)
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-
-        task.wait(0.01)
     end
 end)
-
 
 -- Drop loops
 local debounce = 0
