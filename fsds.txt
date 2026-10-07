@@ -1063,8 +1063,8 @@ task.spawn(function()
 end)
 
 -- CHEST PICKUP
-local CHEST_EVERY = 0.2
-local CHEST_BUDGET = 10
+local CHEST_EVERY = 0.03
+local CHEST_BUDGET = 20
 local chestTried = {}
 local lastChest = 0
 
