@@ -6,6 +6,34 @@ local bufferWriter = require(rs.Modules.ByteNet.process.bufferWriter)
 local packetIDs = require(rs.Modules.ByteNet.packets.packetIDs)
 local oldExport = bufferWriter.export
 
+bufferWriter.export = function(...)
+    local result = oldExport(...)
+    local buf = result and result.buff
+    local cursor = result and result.cursor
+    if not buf or not cursor or cursor < 3 then
+        return result
+    end
+
+    local i = 0
+    while i < cursor do
+        buffer.writeu8(buf, i, 0) -- force legit flag
+        i += 1
+        if i + 2 > cursor then break end
+
+        local id = buffer.readu16(buf, i)
+        i += 2
+
+        local packet = packetIDs[id]
+        if not (packet and packet.reader) then break end
+
+        local ok, _, size = pcall(packet.reader, buf, i)
+        if not ok or type(size) ~= "number" then break end
+        i += size
+    end
+
+    return result
+end
+
 local Library = loadstring(game:HttpGetAsync("https://github.com/1dontgiveaf/Fluent-Renewed/releases/download/v1.0/Fluent.luau"))()
 local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/SaveManager.luau"))()
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
