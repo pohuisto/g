@@ -45,7 +45,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayoo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -879,12 +879,14 @@ local function stopQueenServantAura()
     if queenServantConn then queenServantConn:Disconnect(); queenServantConn = nil end
 end
 
--- PICKUP FOR 10K+ ITEM SERVERS (event-based, no full scans)
-local SEND_EVERY = 0.03
-local PER_PULSE  = 20
-local RETRY      = 0.65
+-- PICKUP — adaptive: instant when few, max speed when many
+local SEND_EVERY = 0.02
+local PER_PULSE_LOW = 25   -- few items → blast
+local PER_PULSE_HIGH = 6   -- many items → smaller batches so they land
+local MANY_THRESHOLD = 40
+local RETRY = 0.35
 
-local tracked    = {}  -- [Instance] = entityID
+local tracked    = {}
 local tried      = {}
 local lastSend   = 0
 local lastClean  = 0
@@ -917,7 +919,6 @@ local function hookFolder(folder)
     hookConnAdd = folder.ChildAdded:Connect(track)
     hookConnRem = folder.ChildRemoved:Connect(untrack)
 
-    -- build index in slices so 10k never freezes
     if building then return end
     building = true
     task.spawn(function()
@@ -925,13 +926,12 @@ local function hookFolder(folder)
         local children = folder:GetChildren()
         for i = 1, #children do
             track(children[i])
-            if i % 150 == 0 then task.wait() end -- yield every 150
+            if i % 150 == 0 then task.wait() end
         end
         building = false
     end)
 end
 
--- watch for Items folder
 task.spawn(function()
     while true do
         local f = workspace:FindFirstChild("Items")
@@ -942,7 +942,6 @@ task.spawn(function()
     end
 end)
 
--- rebuild when dropdown changes
 Options.itemdropdown:OnChanged(function(v)
     selecteditems = {}
     for item, state in pairs(v) do
@@ -963,119 +962,51 @@ task.spawn(function()
         local rangeSq = range * range
         local pos = root.Position
 
-        if now - lastSend >= SEND_EVERY then
+        -- count in-range first
+        local inRange = {}
+        for part, eid in pairs(tracked) do
+            if not part.Parent then
+                tracked[part] = nil
+            else
+                local p = part.Position
+                local dx, dy, dz = p.X - pos.X, p.Y - pos.Y, p.Z - pos.Z
+                if dx*dx + dy*dy + dz*dz <= rangeSq then
+                    inRange[#inRange + 1] = {part = part, eid = eid}
+                end
+            end
+        end
+
+        local pulse = (#inRange >= MANY_THRESHOLD) and PER_PULSE_HIGH or PER_PULSE_LOW
+        local interval = (#inRange >= MANY_THRESHOLD) and 0.03 or SEND_EVERY
+
+        if now - lastSend >= interval then
             local sent = 0
-            for part, eid in pairs(tracked) do
-                if sent >= PER_PULSE then break end
-                if not part.Parent then
-                    tracked[part] = nil
-                else
-                    local p = part.Position
-                    local dx, dy, dz = p.X - pos.X, p.Y - pos.Y, p.Z - pos.Z
-                    if dx*dx + dy*dy + dz*dz <= rangeSq then
-                        local prev = tried[eid]
-                        if not prev or now - prev >= RETRY then
-                            pickup(eid)
-                            tried[eid] = now
-                            sent += 1
-                        end
-                    end
+            for i = 1, #inRange do
+                if sent >= pulse then break end
+                local eid = inRange[i].eid
+                local prev = tried[eid]
+                if not prev or now - prev >= RETRY then
+                    pickup(eid)
+                    tried[eid] = now
+                    sent += 1
                 end
             end
             lastSend = now
         end
 
-        if now - lastClean > 4 then
+        if now - lastClean > 3 then
             for eid, t in pairs(tried) do
-                if now - t > 2 then tried[eid] = nil end
+                if now - t > 1.5 then tried[eid] = nil end
             end
             lastClean = now
         end
 
-        task.wait(0.03)
+        task.wait(0.02)
     end
 end)
 
--- TRAPS / NESTS — spatial only (safe with 50k+)
-local TRAP_EVERY   = 0.2
-local TRAP_BUDGET  = 8
-local trapTried    = {}
-local lastTrap     = 0
-
-local trapOverlap = OverlapParams.new()
-trapOverlap.FilterType = Enum.RaycastFilterType.Include
-trapOverlap.MaxParts = 60
-
-local function pickupNearbyTraps()
-    if not root then return end
-    local dep = workspace:FindFirstChild("Deployables")
-    if not dep then return end
-
-    local range = tonumber(Options.pickuprange.Value) or 35
-    trapOverlap.FilterDescendantsInstances = { dep }
-
-    local parts = workspace:GetPartBoundsInRadius(root.Position, range, trapOverlap)
-    local now = tick()
-    local sent = 0
-    local seen = {}
-
-    for i = 1, #parts do
-        if sent >= TRAP_BUDGET then break end
-
-        local part = parts[i]
-        local trap = part:FindFirstAncestorWhichIsA("Model")
-        if not trap then continue end
-        if seen[trap] then continue end
-        seen[trap] = true
-
-        local n = trap.Name
-        if n ~= "Fish Trap" and n ~= "Nest" then continue end
-
-        local contents = trap:FindFirstChild("Contents")
-        if not contents then continue end
-
-        for _, item in ipairs(contents:GetChildren()) do
-            if sent >= TRAP_BUDGET then break end
-            local eid = item:GetAttribute("EntityID")
-            if not eid then continue end
-
-            local name = item.Name
-            if name == "Raw Fish" or name == "Egg" or shouldPickup(name) then
-                local prev = trapTried[eid]
-                if not prev or now - prev >= 0.7 then
-                    pickup(eid)
-                    trapTried[eid] = now
-                    sent += 1
-                end
-            end
-        end
-    end
-end
-
-task.spawn(function()
-    while true do
-        if Options.autopickuptoggle and Options.autopickuptoggle.Value and root then
-            local now = tick()
-            if now - lastTrap >= TRAP_EVERY then
-                pickupNearbyTraps()
-                lastTrap = now
-            end
-            if now % 5 < 0.05 then
-                for eid, t in pairs(trapTried) do
-                    if now - t > 2 then trapTried[eid] = nil end
-                end
-            end
-            task.wait(0.05)
-        else
-            table.clear(trapTried)
-            task.wait(0.25)
-        end
-    end
-end)
-
--- CHEST PICKUP
-local CHEST_EVERY = 0.2
-local CHEST_BUDGET = 10
+-- CHEST — 1 item at a time, as fast as possible
+local CHEST_EVERY = 0.05
 local chestTried = {}
 local lastChest = 0
 
@@ -1088,10 +1019,8 @@ local function pickupNearbyChests()
     local rangeSq = range * range
     local pos = root.Position
     local now = tick()
-    local sent = 0
 
     for _, chest in ipairs(dep:GetChildren()) do
-        if sent >= CHEST_BUDGET then break end
         if chest.Name ~= "Chest" then continue end
 
         local base = chest.PrimaryPart or chest:FindFirstChild("Base") or chest:FindFirstChildWhichIsA("BasePart")
@@ -1104,17 +1033,15 @@ local function pickupNearbyChests()
         if not contents then continue end
 
         for _, item in ipairs(contents:GetChildren()) do
-            if sent >= CHEST_BUDGET then break end
             local eid = item:GetAttribute("EntityID")
             if not eid then continue end
+            if not shouldPickup(item.Name) then continue end
 
-            if shouldPickup(item.Name) then
-                local prev = chestTried[eid]
-                if not prev or now - prev >= 0.7 then
-                    pickup(eid)
-                    chestTried[eid] = now
-                    sent += 1
-                end
+            local prev = chestTried[eid]
+            if not prev or now - prev >= 0.4 then
+                pickup(eid)
+                chestTried[eid] = now
+                return -- only 1 per pulse
             end
         end
     end
@@ -1128,15 +1055,15 @@ task.spawn(function()
                 pickupNearbyChests()
                 lastChest = now
             end
-            if now % 5 < 0.05 then
+            if now % 4 < 0.05 then
                 for eid, t in pairs(chestTried) do
-                    if now - t > 2 then chestTried[eid] = nil end
+                    if now - t > 1.5 then chestTried[eid] = nil end
                 end
             end
-            task.wait(0.05)
+            task.wait(0.03)
         else
             table.clear(chestTried)
-            task.wait(0.25)
+            task.wait(0.2)
         end
     end
 end)
