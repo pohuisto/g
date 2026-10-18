@@ -880,7 +880,7 @@ local function stopQueenServantAura()
 end
 
 -- PICKUP — adaptive: instant when few, max speed when many
-local SEND_EVERY = 0.02
+local SEND_EVERY = 0.000001
 local PER_PULSE_LOW = 25   -- few items → blast
 local PER_PULSE_HIGH = 6   -- many items → smaller batches so they land
 local MANY_THRESHOLD = 40
@@ -1006,7 +1006,7 @@ task.spawn(function()
 end)
 
 -- CHEST — 1 item at a time, as fast as possible
-local CHEST_EVERY = 0.05
+local CHEST_EVERY = 0.00001
 local chestTried = {}
 local lastChest = 0
 
