@@ -1,5 +1,5 @@
-print("loading cooked!!")
-print("----------------------------------")
+print("loading cooked")
+print("----------------------------------e")
 
 local rs = game:GetService("ReplicatedStorage")
 local bufferWriter = require(rs.Modules.ByteNet.process.bufferWriter)
@@ -44,23 +44,8 @@ local Library = loadstring(game:HttpGetAsync("https://github.com/1dontgiveaf/Flu
 local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/SaveManager.luau"))()
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
-local packets = require(rs.Modules.Packets)
-
-local rebirthBlocked = true
-local oldRebirthSend = packets.Rebirth and packets.Rebirth.send
-
-if packets.Rebirth and oldRebirthSend then
-    packets.Rebirth.send = function(...)
-        if rebirthBlocked then
-            print("[Rebirth] blocked")
-            return
-        end
-        return oldRebirthSend(...)
-    end
-end
-
 local Window = Library:CreateWindow{
-    Title = "datebayo!", SubTitle = "", TabWidth = 160,
+    Title = "datebayoo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -727,7 +712,7 @@ function StartDeployableAura(range)
 
         local targetList = {}
         local folders = {"Deployables", "Rubble", "dropChests"}
-      
+        
         for _, folderName in ipairs(folders) do
             local folder = workspace:FindFirstChild(folderName)
             if folder then
@@ -1868,60 +1853,6 @@ Tabs.Potions:AddButton({
     end
 })
 
--- Auto Rebirth System
-local autoRebirthRunning = false
-local hasConfirmedRebirth = false
-
-local function pressBedButton()
-    local spawnGui = plr.PlayerGui:FindFirstChild("SpawnGui")
-    if spawnGui and spawnGui:FindFirstChild("Customization") then
-        local bedButton = spawnGui.Customization:FindFirstChild("BedButton")
-        if bedButton then
-            pcall(function() bedButton.Activated:Fire() end)
-            pcall(function() firesignal(bedButton.Activated) end)
-            return
-        end
-    end
-    for _, gui in ipairs(plr.PlayerGui:GetDescendants()) do
-        if gui.Name == "BedButton" then
-            pcall(function() gui.Activated:Fire() end)
-            pcall(function() firesignal(gui.Activated) end)
-        end
-    end
-    pcall(function() rs.Events.SpawnFirst:InvokeServer(true) end)
-end
-
-local function getPlayerLevel()
-    local success, GameUtilLocal = pcall(function() return require(rs.Modules.GameUtil) end)
-    if success and GameUtilLocal.Data and GameUtilLocal.Data.level then return GameUtilLocal.Data.level end
-    return plr:GetAttribute("Level") or 0
-end
-
-local function doRebirth()
-    local success, packetsLocal = pcall(function() return require(rs.Modules.Packets) end)
-    if success and packetsLocal.Rebirth then pcall(function() packetsLocal.Rebirth.send() end) end
-    task.wait(2.5)
-    pressBedButton()
-end
-
-local function AutoRebirthLoop()
-    while autoRebirthRunning do
-        task.wait(0.5)
-        local spawnGui = plr.PlayerGui:FindFirstChild("SpawnGui")
-        if spawnGui and spawnGui.Enabled then pressBedButton() end
-        local currentLevel = getPlayerLevel()
-        if currentLevel >= 100 then doRebirth(); task.wait(6) end
-    end
-end
-
-local function StartAutoRebirth()
-    if autoRebirthRunning then return end
-    autoRebirthRunning = true
-    task.spawn(AutoRebirthLoop)
-end
-
-local function StopAutoRebirth() autoRebirthRunning = false end
-
 -- Tiered Target Verification Helper
 local function getPrioritizedTarget()
     local critters = workspace:FindFirstChild("Critters")
@@ -2075,52 +2006,6 @@ task.spawn(function()
         end
     end
 end)
-
-Tabs.Event:AddSection("Rebirth Lock")
-
-Tabs.Event:AddButton({
-    Title = "Unblock Rebirth (8s)",
-    Callback = function()
-        rebirthBlocked = false
-        print("[Rebirth] unblocked")
-        task.delay(8, function()
-            rebirthBlocked = true
-            print("[Rebirth] re-blocked")
-        end)
-    end
-})
-
-Tabs.Event:AddButton({
-    Title = "Block Rebirth Again",
-    Callback = function()
-        rebirthBlocked = true
-        print("[Rebirth] blocked")
-    end
-})
-
-Tabs.Event:AddSection("Auto Rebirth")
-Tabs.Event:AddToggle("AutoRebirthToggle", {
-    Title = "Auto Rebirth (Level 100 → Rebirth + Reset)",
-    Default = false,
-    Callback = function(state)
-        if state then
-             if not hasConfirmedRebirth then
-                Window:Dialog({
-                    Title = "Confirmation Required",
-                    Content = "Are you sure you want to toggle Auto Rebirth?",
-                     Buttons = {
-                        { Title = "Confirm", Callback = function() hasConfirmedRebirth = true; StartAutoRebirth() end },
-                        { Title = "Cancel", Callback = function() Options.AutoRebirthToggle:SetValue(false) end }
-                    }
-                })
-            else
-                StartAutoRebirth()
-            end
-        else
-            StopAutoRebirth()
-        end
-    end
-})
 
 Tabs.Event:AddSection("Queen Ant's Servant")
 Tabs.Event:AddToggle("queenservanttoggle", {
