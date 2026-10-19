@@ -60,7 +60,7 @@ if packets.Rebirth and oldRebirthSend then
 end
 
 local Window = Library:CreateWindow{
-    Title = "datebayoo", SubTitle = "", TabWidth = 160,
+    Title = "datebayo!", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
