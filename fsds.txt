@@ -6,9 +6,6 @@ local bufferWriter = require(rs.Modules.ByteNet.process.bufferWriter)
 local packetIDs = require(rs.Modules.ByteNet.packets.packetIDs)
 local oldExport = bufferWriter.export
 
-local rs = game:GetService("ReplicatedStorage")
-local packets = require(rs.Modules.Packets)
-
 bufferWriter.export = function(...)
     local result = oldExport(...)
     local buf = result and result.buff
@@ -19,7 +16,7 @@ bufferWriter.export = function(...)
 
     local i = 0
     while i < cursor do
-        buffer.writeu8(buf, i, 0) -- force legit flag
+        buffer.writeu8(buf, i, 0)
         i += 1
         if i >= cursor then break end
 
@@ -43,13 +40,10 @@ bufferWriter.export = function(...)
     return result
 end
 
-local Library = loadstring(game:HttpGetAsync("https://github.com/1dontgiveaf/Fluent-Renewed/releases/download/v1.0/Fluent.luau"))()
-local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/SaveManager.luau"))()
-local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
+local packets = require(rs.Modules.Packets)
 
 local rebirthBlocked = true
 local oldRebirthSend = packets.Rebirth and packets.Rebirth.send
-
 if packets.Rebirth and oldRebirthSend then
     packets.Rebirth.send = function(...)
         if rebirthBlocked then
@@ -59,6 +53,9 @@ if packets.Rebirth and oldRebirthSend then
         return oldRebirthSend(...)
     end
 end
+
+local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/SaveManager.luau"))()
+local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
     Title = "datebayoo", SubTitle = "", TabWidth = 160,
