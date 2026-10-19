@@ -44,6 +44,21 @@ local Library = loadstring(game:HttpGetAsync("https://github.com/1dontgiveaf/Flu
 local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/SaveManager.luau"))()
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
+local packets = require(rs.Modules.Packets)
+
+local rebirthBlocked = true
+local oldRebirthSend = packets.Rebirth and packets.Rebirth.send
+
+if packets.Rebirth and oldRebirthSend then
+    packets.Rebirth.send = function(...)
+        if rebirthBlocked then
+            print("[Rebirth] blocked")
+            return
+        end
+        return oldRebirthSend(...)
+    end
+end
+
 local Window = Library:CreateWindow{
     Title = "datebayoo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
