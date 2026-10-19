@@ -1,4 +1,4 @@
-print("loading cooked")
+print("loading cooked!!")
 print("----------------------------------")
 
 local rs = game:GetService("ReplicatedStorage")
