@@ -40,6 +40,21 @@ bufferWriter.export = function(...)
     return result
 end
 
+local packets = require(rs.Modules.Packets)
+
+local rebirthBlocked = true
+local oldRebirthSend = packets.Rebirth and packets.Rebirth.send
+
+if packets.Rebirth and oldRebirthSend then
+    packets.Rebirth.send = function(...)
+        if rebirthBlocked then
+            print("[Rebirth] blocked")
+            return
+        end
+        return oldRebirthSend(...)
+    end
+end
+
 local Library = loadstring(game:HttpGetAsync("https://github.com/1dontgiveaf/Fluent-Renewed/releases/download/v1.0/Fluent.luau"))()
 local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/SaveManager.luau"))()
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
@@ -2060,6 +2075,28 @@ task.spawn(function()
         end
     end
 end)
+
+Tabs.Event:AddSection("Rebirth Lock")
+
+Tabs.Event:AddButton({
+    Title = "Unblock Rebirth (8s)",
+    Callback = function()
+        rebirthBlocked = false
+        print("[Rebirth] unblocked")
+        task.delay(8, function()
+            rebirthBlocked = true
+            print("[Rebirth] re-blocked")
+        end)
+    end
+})
+
+Tabs.Event:AddButton({
+    Title = "Block Rebirth Again",
+    Callback = function()
+        rebirthBlocked = true
+        print("[Rebirth] blocked")
+    end
+})
 
 Tabs.Event:AddSection("Auto Rebirth")
 Tabs.Event:AddToggle("AutoRebirthToggle", {
