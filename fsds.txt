@@ -45,7 +45,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayo!", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -871,17 +871,16 @@ local function stopQueenServantAura()
     if queenServantConn then queenServantConn:Disconnect(); queenServantConn = nil end
 end
 
--- PICKUP — adaptive: instant when few, max speed when many
-local SEND_EVERY = 0.000001
-local PER_PULSE_LOW = 25   -- few items → blast
-local PER_PULSE_HIGH = 6   -- many items → smaller batches so they land
-local MANY_THRESHOLD = 40
-local RETRY = 0.35
+-- PICKUP — blast all, switch to 1-by-1 after 5s stuck
+local RETRY = 0.2
+local STUCK_TIME = 5
+local SERIAL_INTERVAL = 0.01
 
 local tracked    = {}
 local tried      = {}
 local lastSend   = 0
 local lastClean  = 0
+local stuckSince = 0
 local itemsFolder = nil
 local hookConnAdd, hookConnRem
 local building = false
@@ -945,6 +944,7 @@ end)
 task.spawn(function()
     while true do
         if not (Options.autopickuptoggle and Options.autopickuptoggle.Value and root) then
+            stuckSince = 0
             task.wait(0.15)
             continue
         end
@@ -954,7 +954,6 @@ task.spawn(function()
         local rangeSq = range * range
         local pos = root.Position
 
-        -- count in-range first
         local inRange = {}
         for part, eid in pairs(tracked) do
             if not part.Parent then
@@ -963,27 +962,51 @@ task.spawn(function()
                 local p = part.Position
                 local dx, dy, dz = p.X - pos.X, p.Y - pos.Y, p.Z - pos.Z
                 if dx*dx + dy*dy + dz*dz <= rangeSq then
-                    inRange[#inRange + 1] = {part = part, eid = eid}
+                    inRange[#inRange + 1] = eid
                 end
             end
         end
 
-        local pulse = (#inRange >= MANY_THRESHOLD) and PER_PULSE_HIGH or PER_PULSE_LOW
-        local interval = (#inRange >= MANY_THRESHOLD) and 0.03 or SEND_EVERY
+        local count = #inRange
+        if count == 0 then
+            stuckSince = 0
+            task.wait(0.05)
+            continue
+        end
 
-        if now - lastSend >= interval then
-            local sent = 0
-            for i = 1, #inRange do
-                if sent >= pulse then break end
-                local eid = inRange[i].eid
+        if stuckSince == 0 then
+            stuckSince = now
+        end
+
+        local serial = (now - stuckSince) >= STUCK_TIME
+
+        if not serial then
+            -- blast everything
+            for i = 1, count do
+                local eid = inRange[i]
                 local prev = tried[eid]
                 if not prev or now - prev >= RETRY then
                     pickup(eid)
                     tried[eid] = now
-                    sent += 1
                 end
             end
             lastSend = now
+            task.wait(0.04)
+        else
+            -- stuck 5s → fast 1 by 1
+            if now - lastSend >= SERIAL_INTERVAL then
+                for i = 1, count do
+                    local eid = inRange[i]
+                    local prev = tried[eid]
+                    if not prev or now - prev >= RETRY then
+                        pickup(eid)
+                        tried[eid] = now
+                        lastSend = now
+                        break
+                    end
+                end
+            end
+            task.wait(0.005)
         end
 
         if now - lastClean > 3 then
@@ -992,13 +1015,11 @@ task.spawn(function()
             end
             lastClean = now
         end
-
-        task.wait(0.02)
     end
 end)
 
--- CHEST — 1 item at a time, as fast as possible
-local CHEST_EVERY = 0.00001
+-- CHEST — fast multi pickup
+local CHEST_RETRY = 0.15
 local chestTried = {}
 local lastChest = 0
 
@@ -1011,6 +1032,7 @@ local function pickupNearbyChests()
     local rangeSq = range * range
     local pos = root.Position
     local now = tick()
+    local sent = 0
 
     for _, chest in ipairs(dep:GetChildren()) do
         if chest.Name ~= "Chest" then continue end
@@ -1030,10 +1052,11 @@ local function pickupNearbyChests()
             if not shouldPickup(item.Name) then continue end
 
             local prev = chestTried[eid]
-            if not prev or now - prev >= 0.4 then
+            if not prev or now - prev >= CHEST_RETRY then
                 pickup(eid)
                 chestTried[eid] = now
-                return -- only 1 per pulse
+                sent += 1
+                if sent >= 12 then return end
             end
         end
     end
@@ -1042,17 +1065,14 @@ end
 task.spawn(function()
     while true do
         if Options.chestpickuptoggle and Options.chestpickuptoggle.Value and root then
+            pickupNearbyChests()
             local now = tick()
-            if now - lastChest >= CHEST_EVERY then
-                pickupNearbyChests()
-                lastChest = now
-            end
             if now % 4 < 0.05 then
                 for eid, t in pairs(chestTried) do
-                    if now - t > 1.5 then chestTried[eid] = nil end
+                    if now - t > 1.2 then chestTried[eid] = nil end
                 end
             end
-            task.wait(0.03)
+            task.wait(0.01)
         else
             table.clear(chestTried)
             task.wait(0.2)
