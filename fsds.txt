@@ -45,7 +45,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo!", SubTitle = "", TabWidth = 160,
+    Title = "datebayowww!", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -871,15 +871,12 @@ local function stopQueenServantAura()
     if queenServantConn then queenServantConn:Disconnect(); queenServantConn = nil end
 end
 
--- PICKUP — blast all, switch to 1-by-1 after 5s stuck
-local RETRY = 0.2
+-- PICKUP — blast all, after 5s stuck spam max speed
 local STUCK_TIME = 5
-local SERIAL_INTERVAL = 0.01
+local RETRY = 0.15
 
-local tracked    = {}
-local tried      = {}
-local lastSend   = 0
-local lastClean  = 0
+local tracked = {}
+local tried = {}
 local stuckSince = 0
 local itemsFolder = nil
 local hookConnAdd, hookConnRem
@@ -917,7 +914,7 @@ local function hookFolder(folder)
         local children = folder:GetChildren()
         for i = 1, #children do
             track(children[i])
-            if i % 150 == 0 then task.wait() end
+            if i % 200 == 0 then task.wait() end
         end
         building = false
     end)
@@ -945,7 +942,7 @@ task.spawn(function()
     while true do
         if not (Options.autopickuptoggle and Options.autopickuptoggle.Value and root) then
             stuckSince = 0
-            task.wait(0.15)
+            task.wait(0.12)
             continue
         end
 
@@ -967,8 +964,7 @@ task.spawn(function()
             end
         end
 
-        local count = #inRange
-        if count == 0 then
+        if #inRange == 0 then
             stuckSince = 0
             task.wait(0.05)
             continue
@@ -978,11 +974,17 @@ task.spawn(function()
             stuckSince = now
         end
 
-        local serial = (now - stuckSince) >= STUCK_TIME
+        local spam = (now - stuckSince) >= STUCK_TIME
 
-        if not serial then
-            -- blast everything
-            for i = 1, count do
+        if spam then
+            -- MAX SPEED: every item every frame, no retry lock
+            for i = 1, #inRange do
+                pickup(inRange[i])
+            end
+            runs.Heartbeat:Wait()
+        else
+            -- normal blast pulse
+            for i = 1, #inRange do
                 local eid = inRange[i]
                 local prev = tried[eid]
                 if not prev or now - prev >= RETRY then
@@ -990,38 +992,19 @@ task.spawn(function()
                     tried[eid] = now
                 end
             end
-            lastSend = now
-            task.wait(0.04)
-        else
-            -- stuck 5s → fast 1 by 1
-            if now - lastSend >= SERIAL_INTERVAL then
-                for i = 1, count do
-                    local eid = inRange[i]
-                    local prev = tried[eid]
-                    if not prev or now - prev >= RETRY then
-                        pickup(eid)
-                        tried[eid] = now
-                        lastSend = now
-                        break
-                    end
-                end
-            end
-            task.wait(0.005)
+            task.wait(0.03)
         end
 
-        if now - lastClean > 3 then
+        if now % 3 < 0.05 then
             for eid, t in pairs(tried) do
-                if now - t > 1.5 then tried[eid] = nil end
+                if now - t > 1.2 then tried[eid] = nil end
             end
-            lastClean = now
         end
     end
 end)
 
--- CHEST — fast multi pickup
-local CHEST_RETRY = 0.15
+-- CHEST — max speed
 local chestTried = {}
-local lastChest = 0
 
 local function pickupNearbyChests()
     if not root then return end
@@ -1032,31 +1015,25 @@ local function pickupNearbyChests()
     local rangeSq = range * range
     local pos = root.Position
     local now = tick()
-    local sent = 0
 
     for _, chest in ipairs(dep:GetChildren()) do
         if chest.Name ~= "Chest" then continue end
-
         local base = chest.PrimaryPart or chest:FindFirstChild("Base") or chest:FindFirstChildWhichIsA("BasePart")
         if not base then continue end
-
-        local delta = base.Position - pos
-        if delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z > rangeSq then continue end
+        local d = base.Position - pos
+        if d.X*d.X + d.Y*d.Y + d.Z*d.Z > rangeSq then continue end
 
         local contents = chest:FindFirstChild("Contents")
         if not contents then continue end
 
         for _, item in ipairs(contents:GetChildren()) do
             local eid = item:GetAttribute("EntityID")
-            if not eid then continue end
-            if not shouldPickup(item.Name) then continue end
-
-            local prev = chestTried[eid]
-            if not prev or now - prev >= CHEST_RETRY then
-                pickup(eid)
-                chestTried[eid] = now
-                sent += 1
-                if sent >= 12 then return end
+            if eid and shouldPickup(item.Name) then
+                local prev = chestTried[eid]
+                if not prev or now - prev >= 0.08 then
+                    pickup(eid)
+                    chestTried[eid] = now
+                end
             end
         end
     end
@@ -1067,12 +1044,12 @@ task.spawn(function()
         if Options.chestpickuptoggle and Options.chestpickuptoggle.Value and root then
             pickupNearbyChests()
             local now = tick()
-            if now % 4 < 0.05 then
+            if now % 3 < 0.05 then
                 for eid, t in pairs(chestTried) do
-                    if now - t > 1.2 then chestTried[eid] = nil end
+                    if now - t > 1 then chestTried[eid] = nil end
                 end
             end
-            task.wait(0.01)
+            runs.Heartbeat:Wait()
         else
             table.clear(chestTried)
             task.wait(0.2)
