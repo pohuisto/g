@@ -6,7 +6,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayoooooo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -22,7 +22,7 @@ local Tabs = {
 }
 
 local rs, plr = game:GetService("ReplicatedStorage"), game.Players.LocalPlayer
-local packets = require(rs.Modules.Packets)
+Packets = require(Srvc.RepS.Modules.util.packets),
 local GameUtil = require(rs.Modules.GameUtil)
 local clock = require(rs.Modules.Clock)
 local runs = game:GetService("RunService")
