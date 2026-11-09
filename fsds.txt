@@ -6,7 +6,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayow", SubTitle = "", TabWidth = 160,
+    Title = "datebayo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -195,7 +195,7 @@ local function startKillAura()
                     if dist <= range then
                         local eid = player.Character:GetAttribute("EntityID")
                         if eid then
-                            table.insert(targets, {entityID = eid}) -- no buffer field
+table.insert(targets, eid)
                         end
                     end
                 end
@@ -491,10 +491,13 @@ Options.msatoggle:OnChanged(updmsa)
 -- Helper functions
 local function swingtool(entityIds)
     if not (packets.SwingTool and packets.SwingTool.send) then return end
-    local arr = {}
-    for _, eid in ipairs(entityIds) do table.insert(arr, {entityID = eid}) end
+    if not entityIds or #entityIds == 0 then return end
     pcall(function()
-        packets.SwingTool.send({entityIDs = arr, cframe = root and root.CFrame or CFrame.new(), timestamp = clock.getServerTime(true)})
+        packets.SwingTool.send({
+            entityIDs = entityIds, -- raw numbers
+            cframe = root and root.CFrame or CFrame.new(),
+            timestamp = clock.getServerTime(true)
+        })
     end)
 end
 
@@ -675,7 +678,7 @@ function StartDeployableAura(range)
                     if eid then
                         local pp = child.PrimaryPart or child:FindFirstChildWhichIsA("BasePart")
                         if pp and (pp.Position - rootPart.Position).Magnitude <= range then
-                            table.insert(targetList, {entityID = eid, buffer = 0})
+table.insert(targetList, eid)
                         end
                     end
                 end
