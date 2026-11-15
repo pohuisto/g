@@ -1,12 +1,12 @@
 print("loading cooked")
-print("----------------------------------e")
+print("----------------------------------")
 
 local Library = loadstring(game:HttpGetAsync("https://github.com/1dontgiveaf/Fluent-Renewed/releases/download/v1.0/Fluent.luau"))()
 local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/SaveManager.luau"))()
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayowo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -17,7 +17,7 @@ local Tabs = {
     Pickup = Window:AddTab({ Title = "Pickup", Icon = "backpack" }),
     Farming = Window:AddTab({ Title = "Farming", Icon = "sprout" }),
     Event = Window:AddTab({ Title = "Event", Icon = "zap" }),
-    Potions = Window:AddTab({ Title = "Potions", Icon = "flask" }),
+    Den = Window:AddTab({ Title = "Den's Stuff", Icon = "flask" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
@@ -134,7 +134,7 @@ Tabs.Pickup:CreateDropdown("itemdropdown", {
 
 Tabs.Pickup:AddSection("Auto Drop")
 Tabs.Pickup:AddToggle("droptoggle", { Title = "Auto Drop", Default = false })
-Tabs.Pickup:AddDropdown("dropdropdown", {Title = "Select Item to Drop", Values = { "Bloodfruit", "Jelly", "Bluefruit", "Log", "Leaves", "Wood" }, Default = "Bloodfruit"})
+Tabs.Pickup:AddDropdown("dropdropdown", {Title = "Select Item to Drop", Values = { "Bloodfruit", "Log", "Leaves", "Wood", "Gold", "Crystal Chunk" }, Default = "Bloodfruit"})
 Tabs.Pickup:AddToggle("droptogglemanual", { Title = "Auto Drop Custom", Default = false })
 Tabs.Pickup:AddInput("droptextbox", { Title = "Custom Item", Default = "Bloodfruit", Numeric = false, Finished = false })
 
@@ -455,6 +455,13 @@ Options.jptoggle:OnChanged(updws)
 
 Tabs.Main:AddSection("Noclip")
 Tabs.Main:CreateToggle("nocliptoggle", { Title = "Noclip", Default = false })
+Tabs.Main:AddSection("Noclip (Body Parts Only)")
+Tabs.Main:CreateToggle("noclipheadtoggle", { Title = "Noclip Head Only", Default = false })
+Tabs.Main:CreateToggle("nocliptorsotoggle", { Title = "Noclip Torso Only", Default = false })
+Tabs.Main:CreateToggle("noclipbothandstoggle", { Title = "Noclip Arms Only", Default = false })
+Tabs.Main:CreateToggle("nocliplegstoggle", { Title = "Noclip Legs Only", Default = false })
+Tabs.Main:CreateToggle("noclip_roottoggle", { Title = "Noclip HumanoidRootPart Only", Default = false })
+Tabs.Main:CreateToggle("noclipaccessoriestoggle", { Title = "Noclip Accessories Only", Default = false })
 
 local noclipConn
 Options.nocliptoggle:OnChanged(function(state)
@@ -477,6 +484,54 @@ Options.nocliptoggle:OnChanged(function(state)
         end
     end
 end)
+
+-- Body-part noclip toggles (work on top of / independent from the full Noclip above)
+local noclipPartGroups = {
+    {opt = "noclipheadtoggle", names = {"Head"}},
+    {opt = "nocliptorsotoggle", names = {"Torso", "UpperTorso", "LowerTorso"}},
+    {opt = "noclipbothandstoggle", names = {"Left Arm", "Right Arm", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand"}},
+    {opt = "nocliplegstoggle", names = {"Left Leg", "Right Leg", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot"}},
+    {opt = "noclip_roottoggle", names = {"HumanoidRootPart"}},
+}
+local noclipPartLookup = {}
+for _, g in ipairs(noclipPartGroups) do
+    for _, n in ipairs(g.names) do noclipPartLookup[n] = g.opt end
+end
+
+local noclipPartConn
+local function updPartNoclip()
+    local anyOn = false
+    for _, g in ipairs(noclipPartGroups) do
+        if Options[g.opt] and Options[g.opt].Value then anyOn = true break end
+    end
+    if Options.noclipaccessoriestoggle and Options.noclipaccessoriestoggle.Value then anyOn = true end
+
+    if not anyOn then
+        if noclipPartConn then noclipPartConn:Disconnect(); noclipPartConn = nil end
+        return
+    end
+    if noclipPartConn then return end
+
+    noclipPartConn = runs.Stepped:Connect(function()
+        local c = plr.Character
+        if not c then return end
+        local accOn = Options.noclipaccessoriestoggle and Options.noclipaccessoriestoggle.Value
+        for _, part in ipairs(c:GetDescendants()) do
+            if part:IsA("BasePart") then
+                local opt = noclipPartLookup[part.Name]
+                if opt and Options[opt] and Options[opt].Value then
+                    part.CanCollide = false
+                elseif accOn and part.Parent and part.Parent:IsA("Accessory") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end)
+end
+for _, g in ipairs(noclipPartGroups) do
+    Options[g.opt]:OnChanged(updPartNoclip)
+end
+Options.noclipaccessoriestoggle:OnChanged(updPartNoclip)
 
 local function updmsa()
     if slopecon then slopecon:Disconnect(); slopecon = nil end
@@ -1054,81 +1109,125 @@ local function getSlotQuantity(slot)
         or slot:FindFirstChild("Count")
         or slot:FindFirstChildWhichIsA("TextLabel")
     if textObj and textObj.Text then
-        return tonumber(textObj.Text:match("%d+")) or 1
+        local txt = string.lower(textObj.Text)
+        local num = tonumber(txt:match("[%d%.]+"))
+        if not num then return 1 end
+        if txt:find("k", 1, true) then num = num * 1000
+        elseif txt:find("m", 1, true) then num = num * 1000000 end
+        return math.max(1, math.floor(num))
     end
     return 1
 end
 
-local function dropAllInventoryFast()
-    local inv = plr.PlayerGui:FindFirstChild("MainGui")
-        and plr.PlayerGui.MainGui:FindFirstChild("RightPanel")
-        and plr.PlayerGui.MainGui.RightPanel:FindFirstChild("Inventory")
-        and plr.PlayerGui.MainGui.RightPanel.Inventory:FindFirstChild("List")
-    if not inv then return end
-    if not (packets.DropBagItem and packets.DropBagItem.send) then return end
+-- AUTO DROP ALL (fast + low lag)
+-- Every frame: look at all occupied slots once, then send a fixed budget of drop packets
+-- spread round-robin over ALL slots (so every item type drains at the same time),
+-- then wait exactly one Heartbeat. No giant per-slot loops, no long yields.
+local DROPALL_BUDGET = 60 -- max drop packets per frame
 
-    local groups = {}
+local dropAllList = nil
+local function getDropAllList()
+    if dropAllList and dropAllList.Parent then return dropAllList end
+    local pg = plr:FindFirstChild("PlayerGui")
+    local mg = pg and pg:FindFirstChild("MainGui")
+    local rp = mg and mg:FindFirstChild("RightPanel")
+    local invf = rp and rp:FindFirstChild("Inventory")
+    dropAllList = invf and invf:FindFirstChild("List") or nil
+    return dropAllList
+end
+
+local function dropAllInventoryFast()
+    local inv = getDropAllList()
+    if not inv then return false end
+    local sendDrop = packets.DropBagItem and packets.DropBagItem.send
+    if not sendDrop then return false end
+
+    local slots, remaining = {}, {}
     for _, child in ipairs(inv:GetChildren()) do
         if child:IsA("ImageLabel") and typeof(child.LayoutOrder) == "number" and child.Name ~= "" then
-            local name = child.Name
-            if not groups[name] then groups[name] = {} end
-            table.insert(groups[name], {
-                slot = child.LayoutOrder,
-                qty = getSlotQuantity(child)
-            })
+            slots[#slots + 1] = child.LayoutOrder
+            remaining[#slots] = getSlotQuantity(child)
         end
     end
+    if #slots == 0 then return false end
 
-    for _, entries in pairs(groups) do
-        for _, entry in ipairs(entries) do
-            local n = entry.qty
-            if n < 1 then n = 1 end
-            for i = 1, n do
-                if i % 40 == 0 then
-                    if not (Options.dropalltoggle and Options.dropalltoggle.Value) then return end
-                    runs.Heartbeat:Wait()
-                end
-                packets.DropBagItem.send(entry.slot)
+    local budget = DROPALL_BUDGET
+    local progressed = true
+    while budget > 0 and progressed do
+        progressed = false
+        for i = 1, #slots do
+            if remaining[i] > 0 and budget > 0 then
+                sendDrop(slots[i])
+                remaining[i] = remaining[i] - 1
+                budget = budget - 1
+                progressed = true
             end
-            if not (Options.dropalltoggle and Options.dropalltoggle.Value) then return end
         end
     end
+    return true
 end
-    
+
 task.spawn(function()
     while true do
         if Options.dropalltoggle and Options.dropalltoggle.Value then
-            dropAllInventoryFast()
-            task.wait(0.05)
+            pcall(dropAllInventoryFast)
+            runs.Heartbeat:Wait()
         else
             task.wait(0.15)
         end
     end
 end)
 
+-- ITEM DELETERS: each toggle has its OWN selector
+local deleteValues = {
+    "Raw Magnetite",
+    "Raw Meat",
+    "Magnetite",
+    "Meat",
+    "Raw Fish",
+    "Egg",
+    "Raw Gold",
+    "Gold",
+    "Raw Iron",
+    "Iron",
+    "Adurite",
+    "Raw Adurite",
+    "Stone",
+    "Log",
+    "Leaves",
+    "Wood",
+    "Bloodfruit",
+    "Berry",
+    "Essence"
+}
+
+local deleteSelectedItems = {}   -- workspace.Items
+local deleteSelectedChest = {}   -- Chest.Contents
+local deleteSelectedTrap = {}    -- Fish Trap / Nest Contents
+
+local function selectedToList(v)
+    local list = {}
+    if type(v) == "table" then
+        for item, state in pairs(v) do
+            if state then
+                table.insert(list, item)
+            end
+        end
+    end
+    return list
+end
+
+local function shouldDeleteFrom(list, name)
+    if #list == 0 then
+        return true
+    end
+    return table.find(list, name) ~= nil
+end
+
+-- 1) workspace.Items
 Tabs.Pickup:AddDropdown("itemdeleterdropdown", {
-    Title = "Items To Delete",
-    Values = {
-        "Raw Magnetite",
-        "Raw Meat",
-        "Magnetite",
-        "Meat",
-"Raw Fish",
-"Egg",
-        "Raw Gold",
-        "Gold",
-        "Raw Iron",
-        "Iron",
-        "Adurite",
-        "Raw Adurite",
-        "Stone",
-        "Log",
-        "Leaves",
-        "Wood",
-        "Bloodfruit",
-        "Berry",
-        "Essence"
-    },
+    Title = "Items To Delete (workspace.Items)",
+    Values = deleteValues,
     Multi = true,
     Default = {}
 })
@@ -1138,27 +1237,54 @@ Tabs.Pickup:AddToggle("itemdeletertoggle", {
     Default = false
 })
 
+Options.itemdeleterdropdown:OnChanged(function(v)
+    deleteSelectedItems = selectedToList(v)
+end)
+
+task.spawn(function()
+    while true do
+        if Options.itemdeletertoggle and Options.itemdeletertoggle.Value then
+            local folder = workspace:FindFirstChild("Items")
+            if folder then
+                for _, item in ipairs(folder:GetChildren()) do
+                    if shouldDeleteFrom(deleteSelectedItems, item.Name) then
+                        pcall(function() item:Destroy() end)
+                    end
+                end
+            end
+        end
+        task.wait(0.2)
+    end
+end)
+
+-- 2) Deployables.Chest.Contents
+Tabs.Pickup:AddDropdown("chestitemdeleterdropdown", {
+    Title = "Items To Delete (Chest.Contents)",
+    Values = deleteValues,
+    Multi = true,
+    Default = {}
+})
+
 Tabs.Pickup:AddToggle("chestitemdeletertoggle", {
     Title = "Delete From Chest.Contents",
     Default = false
 })
 
-Tabs.Pickup:AddToggle("trapitemdeletertoggle", {
-    Title = "Delete From Fish Trap / Nest Contents",
-    Default = false
-})
+Options.chestitemdeleterdropdown:OnChanged(function(v)
+    deleteSelectedChest = selectedToList(v)
+end)
 
 task.spawn(function()
     while true do
-        if Options.trapitemdeletertoggle and Options.trapitemdeletertoggle.Value then
+        if Options.chestitemdeletertoggle and Options.chestitemdeletertoggle.Value then
             local dep = workspace:FindFirstChild("Deployables")
             if dep then
-                for _, obj in ipairs(dep:GetChildren()) do
-                    if obj.Name == "Fish Trap" or obj.Name == "Nest" then
-                        local contents = obj:FindFirstChild("Contents")
+                for _, chest in ipairs(dep:GetChildren()) do
+                    if chest.Name == "Chest" then
+                        local contents = chest:FindFirstChild("Contents")
                         if contents then
                             for _, item in ipairs(contents:GetChildren()) do
-                                if shouldDelete(item.Name) then
+                                if shouldDeleteFrom(deleteSelectedChest, item.Name) then
                                     pcall(function() item:Destroy() end)
                                 end
                             end
@@ -1171,54 +1297,34 @@ task.spawn(function()
     end
 end)
 
-local deleteSelected = {}
-Options.itemdeleterdropdown:OnChanged(function(v)
-    deleteSelected = {}
-    if type(v) == "table" then
-        for item, state in pairs(v) do
-            if state then
-                table.insert(deleteSelected, item)
-            end
-        end
-    end
+-- 3) Fish Trap / Nest Contents
+Tabs.Pickup:AddDropdown("trapitemdeleterdropdown", {
+    Title = "Items To Delete (Fish Trap / Nest Contents)",
+    Values = deleteValues,
+    Multi = true,
+    Default = {}
+})
+
+Tabs.Pickup:AddToggle("trapitemdeletertoggle", {
+    Title = "Delete From Fish Trap / Nest Contents",
+    Default = false
+})
+
+Options.trapitemdeleterdropdown:OnChanged(function(v)
+    deleteSelectedTrap = selectedToList(v)
 end)
 
-local function shouldDelete(name)
-    if #deleteSelected == 0 then
-        return true
-    end
-    return table.find(deleteSelected, name) ~= nil
-end
-
--- workspace.Items
 task.spawn(function()
     while true do
-        if Options.itemdeletertoggle and Options.itemdeletertoggle.Value then
-            local folder = workspace:FindFirstChild("Items")
-            if folder then
-                for _, item in ipairs(folder:GetChildren()) do
-                    if shouldDelete(item.Name) then
-                        pcall(function() item:Destroy() end)
-                    end
-                end
-            end
-        end
-        task.wait(0.2)
-    end
-end)
-
--- Deployables.Chest.Contents
-task.spawn(function()
-    while true do
-        if Options.chestitemdeletertoggle and Options.chestitemdeletertoggle.Value then
+        if Options.trapitemdeletertoggle and Options.trapitemdeletertoggle.Value then
             local dep = workspace:FindFirstChild("Deployables")
             if dep then
-                for _, chest in ipairs(dep:GetChildren()) do
-                    if chest.Name == "Chest" then
-                        local contents = chest:FindFirstChild("Contents")
+                for _, obj in ipairs(dep:GetChildren()) do
+                    if obj.Name == "Fish Trap" or obj.Name == "Nest" then
+                        local contents = obj:FindFirstChild("Contents")
                         if contents then
                             for _, item in ipairs(contents:GetChildren()) do
-                                if shouldDelete(item.Name) then
+                                if shouldDeleteFrom(deleteSelectedTrap, item.Name) then
                                     pcall(function() item:Destroy() end)
                                 end
                             end
@@ -1634,104 +1740,9 @@ Options.placeplantboxestoggle:OnChanged(function(v)
     end
 end)
 
--- Potions
-local potionLoop, isBrewing, selectedPotion = nil, false, "Healing Potion"
-local POTIONS = {
-    ["Healing Potion"] = {{name = "Ice Cube", amount = 3}, {name = "Bloodfruit", amount = 5}, {name = "Strawberry", amount = 2}},
-    ["Poison Potion"] = {{name = "Ice Cube", amount = 3}, {name = "Prickly Pear", amount = 3}, {name = "Magnetite", amount = 1}},
-    ["Swiftness Potion"] = {{name = "Ice Cube", amount = 3}, {name = "Crystal", amount = 1}, {name = "Cloudberry", amount = 3}},
-    ["Ice Potion"] = {{name = "Ice Cube", amount = 3}, {name = "Crystal", amount = 1}, {name = "Ice Cube", amount = 3}},
-    ["Harming Potion"] = {{name = "Ice Cube", amount = 3}, {name = "Prickly Pear", amount = 3}, {name = "Adurite", amount = 3}},
-    ["Fire Resistance Potion"] = {{name = "Ice Cube", amount = 3}, {name = "Fire Hide", amount = 2}},
-    ["Strength Potion"] = {{name = "Ice Cube", amount = 3}, {name = "Adurite", amount = 2}, {name = "Bloodfruit", amount = 2}},
-    ["Weakness Potion"] = {{name = "Ice Cube", amount = 3}, {name = "Berry", amount = 2}, {name = "Magnetite", amount = 3}},
-    ["Haste Potion"] = {{name = "Ice Cube", amount = 3}, {name = "Iron", amount = 2}, {name = "Lemon", amount = 2}}
-}
 
-local function getInventorySlot(itemName)
-    local list = plr.PlayerGui:FindFirstChild("MainGui") and plr.PlayerGui.MainGui:FindFirstChild("RightPanel") and plr.PlayerGui.MainGui.RightPanel:FindFirstChild("Inventory") and plr.PlayerGui.MainGui.RightPanel.Inventory:FindFirstChild("List")
-    if not list then return nil end
-    for _, slot in ipairs(list:GetChildren()) do
-        if slot:IsA("ImageLabel") and slot.Name:find(itemName) then return slot.LayoutOrder end
-    end
-end
-
-local function dropFromSlot(slot, amount)
-    if not slot then return end
-    for _ = 1, amount do pcall(function() packets.DropBagItem.send(slot) end); task.wait(0.07) end
-end
-
-local function findAllCauldrons()
-    local dep = workspace:FindFirstChild("Deployables")
-    if not dep or not (plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")) then return {} end
-    local rp = plr.Character.HumanoidRootPart.Position
-    local cauldrons = {}
-    for _, obj in ipairs(dep:GetChildren()) do
-        if obj.Name == "Cauldron" and obj:FindFirstChild("Hitbox") and (obj.Hitbox.Position - rp).Magnitude < 30 then
-            table.insert(cauldrons, {cauldron = obj, hitbox = obj.Hitbox})
-        end
-    end
-    return cauldrons
-end
-
-local function teleportToHitbox(hitbox)
-    if not hitbox or not workspace:FindFirstChild("Items") then return end
-    local tp = hitbox.Position + Vector3.new(math.random(-2,2)*0.3, 0.8, math.random(-2,2)*0.3)
-    for _, item in ipairs(workspace.Items:GetChildren()) do
-        local n = item.Name or ""
-        if n:find("Ice Cube") or n:find("Bloodfruit") or n:find("Strawberry") or n:find("Prickly Pear") or n:find("Crystal") or n:find("Cloudberry") or n:find("Adurite") or n:find("Fire Hide") or n:find("Berry") or n:find("Iron") or n:find("Lemon") or n:find("Magnetite") then
-            pcall(function()
-                 if item:IsA("BasePart") then item.Position = tp
-                elseif item:IsA("Model") and item.PrimaryPart then item:SetPrimaryPartCFrame(CFrame.new(tp)) end
-            end)
-        end
-    end
-end
-
-local function brewPotions()
-    if isBrewing then return end
-    isBrewing = true
-    local cauldrons = findAllCauldrons()
-    if #cauldrons == 0 then isBrewing = false; return end
-    local recipe = POTIONS[selectedPotion]
-    if not recipe then isBrewing = false; return end
-    for _, ing in ipairs(recipe) do
-        local slot = getInventorySlot(ing.name)
-        if slot then
-            for _, c in ipairs(cauldrons) do dropFromSlot(slot, ing.amount); task.wait(0.5); teleportToHitbox(c.hitbox); task.wait(0.4) end
-        end
-        task.wait(0.8)
-    end
-    task.wait(2)
-    for _, c in ipairs(cauldrons) do
-        local eid = c.cauldron:GetAttribute("EntityID")
-        if eid then pcall(function() packets.SweepPotion.send(eid) end) end
-    end
-    isBrewing = false
-end
-
-Tabs.Potions:AddSection("Mass Potion Crafter")
-Tabs.Potions:AddDropdown("PotionType", {
-    Title = "Select Potion",
-    Values = {"Healing Potion", "Poison Potion", "Swiftness Potion", "Ice Potion", "Harming Potion", "Fire Resistance Potion", "Strength Potion", "Weakness Potion", "Haste Potion"},
-    Default = "Healing Potion", Multi = false,
-    Callback = function(v) selectedPotion = v end
-})
-Tabs.Potions:AddToggle("AutoPotionToggle", {
-    Title = "Auto Craft Selected Potion", Default = false,
-    Callback = function(s)
-        if s then
-            if potionLoop then potionLoop:Disconnect() end
-            potionLoop = runs.Heartbeat:Connect(brewPotions)
-        else
-            if potionLoop then potionLoop:Disconnect(); potionLoop = nil end
-            isBrewing = false
-        end
-    end
-})
-
-Tabs.Potions:AddSection("God Set")
-Tabs.Potions:AddToggle("godsetcraftertoggle", {
+Tabs.Den:AddSection("God Set")
+Tabs.Den:AddToggle("godsetcraftertoggle", {
     Title = "God Set Crafter",
     Default = false
 })
@@ -1793,7 +1804,7 @@ task.spawn(function()
     end
 end)
 
-Tabs.Potions:AddButton({
+Tabs.Den:AddButton({
     Title = "Teleport to Cheater2S",
     Callback = function()
         local target = game.Players:FindFirstChild("Cheater2S")
