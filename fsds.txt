@@ -1,6 +1,21 @@
 print("loading cooked")
 print("----------------------------------e")
 
+if game:GetService("ReplicatedStorage"):GetAttribute("__FSDS_UI_CREATED") then
+    return
+end
+game:GetService("ReplicatedStorage"):SetAttribute("__FSDS_UI_CREATED", true)
+
+if _G.AutoRetryOnTimeout == nil then
+    local saved = nil
+    pcall(function()
+        if isfile and readfile and isfile("AutoRetryConfig.txt") then
+            saved = readfile("AutoRetryConfig.txt")
+        end
+    end)
+    _G.AutoRetryOnTimeout = (saved ~= "0")
+end
+
 local function fetchWithRetry(url)
     while true do
         local ok, res = pcall(function()
@@ -8,6 +23,9 @@ local function fetchWithRetry(url)
         end)
         if ok and type(res) == "string" and #res > 50 then
             return res
+        end
+        if not _G.AutoRetryOnTimeout then
+            error(res)
         end
         warn("[Loader] HttpGetAsync failed/timed out, retrying in 2s...", tostring(res))
         task.wait(2)
@@ -19,7 +37,7 @@ local SaveManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com
 local InterfaceManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayow", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -2002,67 +2020,19 @@ task.spawn(function()
     end
 end)
 
-Tabs.Den:AddSection("Auto Execute")
-local autoExecUrl = "https://raw.githubusercontent.com/pohuisto/g/refs/heads/main/fsds.txt"
-local autoExecQueued = false
-
-Tabs.Den:AddInput("AutoExecuteUrlInput", {
-    Title = "Script URL (For Teleport Re-Execute)",
-    Default = autoExecUrl,
-    Numeric = false,
-    Callback = function(text)
-        if text and text ~= "" then
-            autoExecUrl = text
-        end
-    end
-})
-
-local function queueScriptWithRetry(targetUrl)
-    local q = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
-    if not q then
-        warn("[Auto Execute] queue_on_teleport not supported by executor")
-        return false
-    end
-    local payload = string.format([[
-        repeat task.wait() until game:IsLoaded() and game.Players.LocalPlayer
-        local url = %q
-        while true do
-            local ok, src = pcall(function() return game:HttpGet(url) end)
-            if ok and type(src) == "string" and #src > 50 then
-                local fn, err = loadstring(src)
-                if fn then
-                    local runOk, runErr = pcall(fn)
-                    if runOk then break end
-                    warn("[Auto Execute] run error:", runErr)
-                else
-                    warn("[Auto Execute] compile error:", err)
-                end
-            end
-            task.wait(2)
-        end
-    ]], targetUrl)
-    pcall(q, payload)
-    return true
-end
-
-Tabs.Den:AddToggle("AutoExecuteToggle", {
-    Title = "Auto Execute on Teleport (Retry Until Loaded)",
-    Default = false,
+Tabs.Den:AddSection("Loader")
+Tabs.Den:AddToggle("RetryOnTimeoutToggle", {
+    Title = "Auto Retry on Http Timeout",
+    Default = (_G.AutoRetryOnTimeout ~= false),
     Callback = function(state)
-        if state and not autoExecQueued then
-            autoExecQueued = true
-            local u = (Options.AutoExecuteUrlInput and Options.AutoExecuteUrlInput.Value ~= "" and Options.AutoExecuteUrlInput.Value) or autoExecUrl
-            queueScriptWithRetry(u)
-        end
+        _G.AutoRetryOnTimeout = state
+        pcall(function()
+            if writefile then
+                writefile("AutoRetryConfig.txt", state and "1" or "0")
+            end
+        end)
     end
 })
-
-plr.OnTeleport:Connect(function()
-    if Options.AutoExecuteToggle and Options.AutoExecuteToggle.Value then
-        local u = (Options.AutoExecuteUrlInput and Options.AutoExecuteUrlInput.Value ~= "" and Options.AutoExecuteUrlInput.Value) or autoExecUrl
-        queueScriptWithRetry(u)
-    end
-end)
 
 -- Tiered Target Verification Helper
 local function getPrioritizedTarget()
