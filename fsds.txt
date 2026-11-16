@@ -1,5 +1,5 @@
 print("loading cooked")
-print("----------------------------------e")
+print("----------------------------------")
 
 if game:GetService("ReplicatedStorage"):GetAttribute("__FSDS_UI_CREATED") then
     return
@@ -37,7 +37,7 @@ local SaveManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com
 local InterfaceManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayow", SubTitle = "", TabWidth = 160,
+    Title = "datebayo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -782,6 +782,13 @@ local function scanResources(range)
                 for _, desc in ipairs(child:GetChildren()) do
                     tryAdd(desc)
                 end
+            elseif child:IsA("Model") then
+                local bw = child:FindFirstChild("Breakaway")
+                if bw then
+                    for _, desc in ipairs(bw:GetChildren()) do
+                        tryAdd(desc)
+                    end
+                end
             end
         end
     end
@@ -1183,37 +1190,84 @@ task.spawn(function()
     end
 end)
 
--- CHEST — max speed
+-- CHEST PICKUP (budgeted + zero-lag on huge chests)
+local CHEST_BUDGET = 25          -- max pickup packets per frame
+local CHEST_SCAN_CAP = 200       -- max items inspected per frame
+local CHEST_RETRY = 0.35
 local chestTried = {}
+local cachedChests = {}
+local lastChestScan = 0
+local chestIdx = 1
+local itemIdx = 1
+local lastChestClean = 0
+
+local function refreshNearbyChests(pos, rangeSq)
+    table.clear(cachedChests)
+    local dep = workspace:FindFirstChild("Deployables")
+    if not dep then return end
+    for _, chest in ipairs(dep:GetChildren()) do
+        if chest.Name == "Chest" then
+            local base = chest.PrimaryPart or chest:FindFirstChild("Base") or chest:FindFirstChildWhichIsA("BasePart")
+            if base then
+                local d = base.Position - pos
+                if d.X * d.X + d.Y * d.Y + d.Z * d.Z <= rangeSq then
+                    local contents = chest:FindFirstChild("Contents")
+                    if contents then
+                        cachedChests[#cachedChests + 1] = contents
+                    end
+                end
+            end
+        end
+    end
+    if chestIdx > #cachedChests then
+        chestIdx = 1
+        itemIdx = 1
+    end
+end
 
 local function pickupNearbyChests()
     if not root then return end
-    local dep = workspace:FindFirstChild("Deployables")
-    if not dep then return end
-
-    local range = tonumber(Options.pickuprange.Value) or 35
-    local rangeSq = range * range
-    local pos = root.Position
     local now = tick()
+    local range = tonumber(Options.pickuprange.Value) or 35
+    if now - lastChestScan >= 0.4 or #cachedChests == 0 then
+        lastChestScan = now
+        refreshNearbyChests(root.Position, range * range)
+    end
+    if #cachedChests == 0 then return end
 
-    for _, chest in ipairs(dep:GetChildren()) do
-        if chest.Name ~= "Chest" then continue end
-        local base = chest.PrimaryPart or chest:FindFirstChild("Base") or chest:FindFirstChildWhichIsA("BasePart")
-        if not base then continue end
-        local d = base.Position - pos
-        if d.X*d.X + d.Y*d.Y + d.Z*d.Z > rangeSq then continue end
+    local sent = 0
+    local scanned = 0
+    local startChest = chestIdx
 
-        local contents = chest:FindFirstChild("Contents")
-        if not contents then continue end
-
-        for _, item in ipairs(contents:GetChildren()) do
-            local eid = item:GetAttribute("EntityID")
-            if eid and shouldPickup(item.Name) then
-                local prev = chestTried[eid]
-                if not prev or now - prev >= 0.08 then
-                    pickup(eid)
-                    chestTried[eid] = now
+    while sent < CHEST_BUDGET and scanned < CHEST_SCAN_CAP do
+        local contents = cachedChests[chestIdx]
+        local children = contents and contents.Parent and contents:GetChildren()
+        if not children or #children == 0 then
+            chestIdx = (chestIdx % #cachedChests) + 1
+            itemIdx = 1
+            if chestIdx == startChest then break end
+        else
+            if itemIdx > #children then itemIdx = 1 end
+            while itemIdx <= #children and sent < CHEST_BUDGET and scanned < CHEST_SCAN_CAP do
+                local item = children[itemIdx]
+                itemIdx = itemIdx + 1
+                scanned = scanned + 1
+                if shouldPickup(item.Name) then
+                    local eid = item:GetAttribute("EntityID")
+                    if eid then
+                        local prev = chestTried[eid]
+                        if not prev or now - prev >= CHEST_RETRY then
+                            pickup(eid)
+                            chestTried[eid] = now
+                            sent = sent + 1
+                        end
+                    end
                 end
+            end
+            if itemIdx > #children then
+                chestIdx = (chestIdx % #cachedChests) + 1
+                itemIdx = 1
+                if chestIdx == startChest then break end
             end
         end
     end
@@ -1222,16 +1276,20 @@ end
 task.spawn(function()
     while true do
         if Options.chestpickuptoggle and Options.chestpickuptoggle.Value and root then
-            pickupNearbyChests()
+            pcall(pickupNearbyChests)
             local now = tick()
-            if now % 3 < 0.05 then
+            if now - lastChestClean >= 2 then
+                lastChestClean = now
                 for eid, t in pairs(chestTried) do
-                    if now - t > 1 then chestTried[eid] = nil end
+                    if now - t > 2 then chestTried[eid] = nil end
                 end
             end
             runs.Heartbeat:Wait()
         else
             table.clear(chestTried)
+            table.clear(cachedChests)
+            chestIdx = 1
+            itemIdx = 1
             task.wait(0.2)
         end
     end
