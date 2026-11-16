@@ -1,12 +1,25 @@
 print("loading cooked")
-print("----------------------------------")
+print("----------------------------------e")
 
-local Library = loadstring(game:HttpGetAsync("https://github.com/1dontgiveaf/Fluent-Renewed/releases/download/v1.0/Fluent.luau"))()
-local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/SaveManager.luau"))()
-local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
+local function fetchWithRetry(url)
+    while true do
+        local ok, res = pcall(function()
+            return game:HttpGetAsync(url)
+        end)
+        if ok and type(res) == "string" and #res > 50 then
+            return res
+        end
+        warn("[Loader] HttpGetAsync failed/timed out, retrying in 2s...", tostring(res))
+        task.wait(2)
+    end
+end
+
+local Library = loadstring(fetchWithRetry("https://github.com/1dontgiveaf/Fluent-Renewed/releases/download/v1.0/Fluent.luau"))()
+local SaveManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/SaveManager.luau"))()
+local InterfaceManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayowo", SubTitle = "", TabWidth = 160,
+    Title = "datebayow", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -30,7 +43,7 @@ local Options = Library.Options
 
 -- Farming statistics tracker table
 local farmStats = {
-    bloodfruits = 0,
+    harvested = {},
     totalAllTime = 0,
     startTime = tick(),
     sessionStartTime = tick(),
@@ -100,6 +113,13 @@ Tabs.Main:CreateToggle("jptoggle", { Title = "JumpPower", Default = false })
 Tabs.Main:CreateSlider("jpslider", { Title = "Value", Min = 1, Max = 65, Rounding = 1, Default = 50 })
 Tabs.Main:CreateToggle("msatoggle", { Title = "No Mountain Slip", Default = false })
 
+Tabs.Main:AddSection("Camera")
+Tabs.Main:CreateToggle("freecamtoggle", { Title = "Free Cam", Default = false })
+Tabs.Main:CreateSlider("freecamspeed", { Title = "Free Cam Speed", Min = 10, Max = 250, Rounding = 1, Default = 50 })
+
+Tabs.Main:AddSection("Performance")
+Tabs.Main:CreateToggle("fpsboosttoggle", { Title = "FPS Boost", Default = false })
+
 -- Map Tab
 Tabs.Map:AddSection("Resource Aura")
 Tabs.Map:CreateToggle("resourceauratoggle", { Title = "Resource Aura", Default = false })
@@ -151,11 +171,6 @@ Tabs.Farming:AddSection("Walk Settings")
 Tabs.Farming:AddToggle("tweentoplantbox", { Title = "Walk to Plant Box", Default = false })
 Tabs.Farming:AddToggle("tweentobush", { Title = "Walk to Bush + Plant Box", Default = false })
 Tabs.Farming:AddSlider("tweenrange", { Title = "Range", Min = 1, Max = 250, Rounding = 1, Default = 250 })
-
-Tabs.Farming:AddSection("Plant Box Placer")
-Tabs.Farming:AddToggle("placeplantboxestoggle", { Title = "Place Plant Boxes Continuously", Default = false })
-Tabs.Farming:AddDropdown("rotationdropdown", {Title = "Plant Box Rotation", Values = {"0 degrees"}, Default = "0 degrees"})
-Tabs.Farming:AddButton({Title = "Place Single Plant Box (Snapped)", Callback = function() placeSingleSnappedBox() end})
 
 Tabs.Map:AddSection("Kill Aura")
 Tabs.Map:CreateToggle("killauratoggle", { Title = "Kill Aura", Default = false })
@@ -227,70 +242,12 @@ Options.killauratoggle:OnChanged(function(state)
     end
 end)
 
-Tabs.Farming:AddSection("Fish Trap Placer")
-Tabs.Farming:AddToggle("placefishtraptoggle", {
-    Title = "Place Fish Traps Continuously",
-    Default = false
-})
-
-local function placeFishTrap()
-    local char = plr.Character
-    if not (char and char:FindFirstChild("HumanoidRootPart")) then return end
-
-    local root = char.HumanoidRootPart
-    local cam = workspace.CurrentCamera
-    local cursorPos = cam and cam.CFrame.Position or root.Position
-
-    -- Raycast down in front of the player to find water
-    local look = root.CFrame.LookVector
-    local origin = root.Position + look * 6 + Vector3.new(0, 8, 0)
-
-    local rp = RaycastParams.new()
-    rp.FilterType = Enum.RaycastFilterType.Exclude
-    rp.FilterDescendantsInstances = {char}
-    rp.IgnoreWater = false
-
-    local result = workspace:Raycast(origin, Vector3.new(0, -40, 0), rp)
-    if not result then return end
-
-    -- Only place if we hit water or very close to water surface
-    local placePos = result.Position + Vector3.new(0, 0.5, 0)
-
-    if packets.PlaceStructure and packets.PlaceStructure.send then
-        pcall(function()
-            packets.PlaceStructure.send({
-                buildingName = "Fish Trap",
-                cframe = CFrame.new(placePos),
-                vec = placePos,
-                isMobile = false,
-                cursor = cursorPos
-            })
-        end)
-    end
-end
-
-local fishTrapConn
-Options.placefishtraptoggle:OnChanged(function(state)
-    if state then
-        if fishTrapConn then fishTrapConn:Disconnect() end
-        fishTrapConn = runs.Heartbeat:Connect(function()
-            placeFishTrap()
-            task.wait(0.25)
-        end)
-    else
-        if fishTrapConn then
-            fishTrapConn:Disconnect()
-            fishTrapConn = nil
-        end
-    end
-end)
-
 -- ═══════════════════════════════════════════════════════════════
--- FISH TRAP FARM — TELEPORT VERSION (no walking)
+-- FISH TRAP FARM — TELEPORT ONLY (no walking, no auto pickup)
 -- ═══════════════════════════════════════════════════════════════
 Tabs.Farming:AddSection("Fish Trap Farm")
 Tabs.Farming:AddToggle("autofishtraptoggle", {
-    Title = "Auto Teleport + Collect Fish Traps",
+    Title = "Auto Teleport to Fish Traps",
     Default = false
 })
 Tabs.Farming:AddSlider("fishtraprangeslider", {
@@ -329,7 +286,7 @@ local function getFishTrapsWithFish()
                                 end
                             end
                         end
-                        break -- only need one Raw Fish per trap
+                        break
                     end
                 end
             end
@@ -342,7 +299,7 @@ end
 
 task.spawn(function()
     local lastTeleport = 0
-    local TELEPORT_COOLDOWN = 0.01   -- prevents server position rubberbanding
+    local TELEPORT_COOLDOWN = 0.01
 
     while true do
         if Options.autofishtraptoggle and Options.autofishtraptoggle.Value and root then
@@ -353,26 +310,17 @@ task.spawn(function()
                 local now = tick()
 
                 if now - lastTeleport >= TELEPORT_COOLDOWN then
-                    -- Instant teleport 3.5–4.5 studs above the trap
                     local offset = Vector3.new(
-                        math.random(-8, 8) * 0.1,   -- tiny random X/Z so you don’t land in the exact same spot every time
+                        math.random(-8, 8) * 0.1,
                         4 + math.random() * 0.6,
                         math.random(-8, 8) * 0.1
                     )
                     root.CFrame = CFrame.new(target.part.Position + offset)
-
                     lastTeleport = now
-                    task.wait(0.11)   -- give the server one network tick to accept the new position
-
-                    -- Fire pickup
-                    pcall(function()
-                        packets.Pickup.send(target.entityID)
-                    end)
-
-                    task.wait(0.14)
+                    task.wait(0.15)
                 end
             else
-                task.wait(0.55)
+                task.wait(0.45)
             end
         else
             task.wait(0.3)
@@ -433,8 +381,11 @@ local TotalAllTimeParagraph = Tabs.Farming:AddParagraph("TotalAllTimeStats", { T
 Tabs.Farming:AddButton({
     Title = "Reset Tracker Statistics",
     Callback = function()
-        farmStats.bloodfruits = 0
+        farmStats.harvested = {}
+        farmStats.totalAllTime = 0
+        farmStats.timerStarted = false
         farmStats.startTime = tick()
+        farmStats.sessionStartTime = tick()
     end
 })
 
@@ -542,6 +493,198 @@ local function updmsa()
     elseif hum then hum.MaxSlopeAngle = 46 end
 end
 Options.msatoggle:OnChanged(updmsa)
+
+-- Free Cam (client-only camera override, zero character movement / zero flagging)
+do
+    local uis = game:GetService("UserInputService")
+    local cas = game:GetService("ContextActionService")
+    local fcActive = false
+    local fcStepName = "AntigravityFreeCamStep"
+    local fcSinkName = "AntigravityFreeCamSink"
+    local fcPos = Vector3.zero
+    local fcYaw, fcPitch = 0, 0
+    local fcInputConn = nil
+    local fcDragging = false
+
+    local function stopFreeCam()
+        if not fcActive then return end
+        fcActive = false
+        fcDragging = false
+        pcall(function() runs:UnbindFromRenderStep(fcStepName) end)
+        pcall(function() cas:UnbindAction(fcSinkName) end)
+        if fcInputConn then fcInputConn:Disconnect(); fcInputConn = nil end
+        pcall(function() uis.MouseBehavior = Enum.MouseBehavior.Default end)
+        local cam = workspace.CurrentCamera
+        if cam then
+            cam.CameraType = Enum.CameraType.Custom
+            local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+            if h then cam.CameraSubject = h end
+        end
+    end
+
+    local function startFreeCam()
+        if fcActive then return end
+        local cam = workspace.CurrentCamera
+        if not cam then return end
+        fcActive = true
+        fcPos = cam.CFrame.Position
+        local rx, ry, _ = cam.CFrame:ToEulerAnglesYXZ()
+        fcPitch = rx
+        fcYaw = ry
+
+        cam.CameraType = Enum.CameraType.Scriptable
+
+        pcall(function()
+            cas:BindActionAtPriority(
+                fcSinkName,
+                function() return Enum.ContextActionResult.Sink end,
+                false,
+                Enum.ContextActionPriority.High.Value + 500,
+                Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D, Enum.KeyCode.Space
+            )
+        end)
+
+        fcInputConn = uis.InputChanged:Connect(function(input)
+            if not fcActive then return end
+            if input.UserInputType == Enum.UserInputType.MouseMovement and uis:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                fcYaw = fcYaw - input.Delta.X * 0.004
+                fcPitch = math.clamp(fcPitch - input.Delta.Y * 0.004, -1.52, 1.52)
+            end
+        end)
+
+        runs:BindToRenderStep(fcStepName, Enum.RenderPriority.Camera.Value + 1, function(dt)
+            if not fcActive then return end
+            local c = workspace.CurrentCamera
+            if not c then return end
+            if c.CameraType ~= Enum.CameraType.Scriptable then
+                c.CameraType = Enum.CameraType.Scriptable
+            end
+
+            if uis:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                if not fcDragging then
+                    fcDragging = true
+                    pcall(function() uis.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition end)
+                end
+            elseif fcDragging then
+                fcDragging = false
+                pcall(function() uis.MouseBehavior = Enum.MouseBehavior.Default end)
+            end
+
+            local rot = CFrame.fromEulerAnglesYXZ(fcPitch, fcYaw, 0)
+            local move = Vector3.zero
+            if not uis:GetFocusedTextBox() then
+                if uis:IsKeyDown(Enum.KeyCode.W) then move = move + rot.LookVector end
+                if uis:IsKeyDown(Enum.KeyCode.S) then move = move - rot.LookVector end
+                if uis:IsKeyDown(Enum.KeyCode.D) then move = move + rot.RightVector end
+                if uis:IsKeyDown(Enum.KeyCode.A) then move = move - rot.RightVector end
+                if uis:IsKeyDown(Enum.KeyCode.E) or uis:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+                if uis:IsKeyDown(Enum.KeyCode.Q) or uis:IsKeyDown(Enum.KeyCode.LeftControl) then move = move - Vector3.new(0, 1, 0) end
+            end
+
+            local speed = (Options.freecamspeed and tonumber(Options.freecamspeed.Value)) or 50
+            if uis:IsKeyDown(Enum.KeyCode.LeftShift) then speed = speed * 2.5 end
+            if move.Magnitude > 0 then
+                fcPos = fcPos + move.Unit * speed * dt
+            end
+            c.CFrame = CFrame.new(fcPos) * rot
+        end)
+    end
+
+    Options.freecamtoggle:OnChanged(function(state)
+        if state then startFreeCam() else stopFreeCam() end
+    end)
+end
+
+-- FPS Boost
+do
+    local lighting = game:GetService("Lighting")
+    local savedLighting = nil
+    local savedEffects = {}
+    local savedParticles = {}
+    local savedTerrain = nil
+
+    local function applyFpsBoost(on)
+        if on then
+            savedLighting = {
+                GlobalShadows = lighting.GlobalShadows,
+                FogEnd = lighting.FogEnd,
+                Brightness = lighting.Brightness
+            }
+            pcall(function()
+                lighting.GlobalShadows = false
+                lighting.FogEnd = 9e9
+                lighting.Brightness = 1
+            end)
+            pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+
+            savedEffects = {}
+            for _, v in ipairs(lighting:GetChildren()) do
+                if v:IsA("PostEffect") then
+                    savedEffects[v] = v.Enabled
+                    v.Enabled = false
+                end
+            end
+
+            local ter = workspace:FindFirstChildOfClass("Terrain")
+            if ter then
+                savedTerrain = {
+                    WaterWaveSize = ter.WaterWaveSize,
+                    WaterWaveSpeed = ter.WaterWaveSpeed,
+                    WaterReflectance = ter.WaterReflectance
+                }
+                pcall(function()
+                    ter.WaterWaveSize = 0
+                    ter.WaterWaveSpeed = 0
+                    ter.WaterReflectance = 0
+                end)
+                pcall(function()
+                    if sethiddenproperty then sethiddenproperty(ter, "Decoration", false) end
+                end)
+            end
+
+            savedParticles = {}
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    savedParticles[obj] = obj.Enabled
+                    obj.Enabled = false
+                end
+            end
+        else
+            if savedLighting then
+                pcall(function()
+                    lighting.GlobalShadows = savedLighting.GlobalShadows
+                    lighting.FogEnd = savedLighting.FogEnd
+                    lighting.Brightness = savedLighting.Brightness
+                end)
+                savedLighting = nil
+            end
+            for v, was in pairs(savedEffects) do
+                if v and v.Parent then pcall(function() v.Enabled = was end) end
+            end
+            savedEffects = {}
+            local ter = workspace:FindFirstChildOfClass("Terrain")
+            if ter and savedTerrain then
+                pcall(function()
+                    ter.WaterWaveSize = savedTerrain.WaterWaveSize
+                    ter.WaterWaveSpeed = savedTerrain.WaterWaveSpeed
+                    ter.WaterReflectance = savedTerrain.WaterReflectance
+                end)
+                pcall(function()
+                    if sethiddenproperty then sethiddenproperty(ter, "Decoration", true) end
+                end)
+                savedTerrain = nil
+            end
+            for obj, was in pairs(savedParticles) do
+                if obj and obj.Parent then pcall(function() obj.Enabled = was end) end
+            end
+            savedParticles = {}
+        end
+    end
+
+    Options.fpsboosttoggle:OnChanged(function(state)
+        applyFpsBoost(state)
+    end)
+end
 
 -- Helper functions
 local function swingtool(entityIds)
@@ -1629,116 +1772,90 @@ task.spawn(function()
     end
 end)
 
--- REWRITTEN HIGH-ACCURACY PARALLEL TRACKING LOOP
-task.spawn(function()
-    local lastCount = nil
-    local trackedBushes = {}
-     
-    while true do
-        local targetFruit = Options.fruitdropdown and Options.fruitdropdown.Value or "Bloodfruit"
-        local currentCount = getInventoryCount(targetFruit) or 0
-        local gained = 0
-        
-        -- 1. Inventory Delta Processing
-        if lastCount == nil then
-            lastCount = currentCount
-          --  print("[Tracker] Context Engine Init baseline total for " .. targetFruit .. ": " .. tostring(lastCount))
-         else
-            if currentCount > lastCount then
-                gained = currentCount - lastCount
-              --  print("[Tracker Inventory Match] Found Increment: +" .. tostring(gained) .. " |\nItem: " .. targetFruit)
-                lastCount = currentCount
-            elseif currentCount < lastCount then
-               -- print("[Tracker Inventory Recalibrate] Drop/Spent detected. Adjusting inventory baseline down to: " .. tostring(currentCount))
-                lastCount = currentCount
+-- REAL FARMING STATISTICS (event-driven via Game.inventory + per-fruit fallback)
+do
+    local function recordHarvest(fruitName, amount)
+        if not fruitName or not fruittoitemid[fruitName] then return end
+        if not amount or amount <= 0 then return end
+        -- When Auto Harvest is off, still count manual bush harvests (<= 25 per packet) without counting chest transfers
+        local harvestingOn = Options.harvesttoggle and Options.harvesttoggle.Value
+        if not harvestingOn and amount > 25 then return end
+
+        if not farmStats.timerStarted then
+            farmStats.timerStarted = true
+            farmStats.startTime = tick()
+            farmStats.sessionStartTime = tick()
+        end
+        farmStats.harvested[fruitName] = (farmStats.harvested[fruitName] or 0) + amount
+        farmStats.totalAllTime = farmStats.totalAllTime + amount
+    end
+
+    local hookedInv = false
+    pcall(function()
+        local gameFolder = rs:FindFirstChild("Game")
+        local invModScript = gameFolder and gameFolder:FindFirstChild("inventory")
+        local invMod = invModScript and require(invModScript)
+        if invMod and type(invMod.itemAdded) == "function" and type(invMod.itemChanged) == "function" then
+            local origAdded = invMod.itemAdded
+            invMod.itemAdded = function(name, qty, idx, ...)
+                pcall(recordHarvest, name, tonumber(qty) or 0)
+                return origAdded(name, qty, idx, ...)
             end
-         end
-        
-        -- 2. Bush Deletion Fallback Processing
-        if Options.harvesttoggle.Value and targetFruit == "Bloodfruit" and root then
-            local harvestrange = tonumber(Options.harvestrange.Value) or 30
-            local bushes = getbushes(harvestrange, "Bloodfruit")
-            
-            for id, data in pairs(trackedBushes) do
-                if not workspace:FindFirstChild(data.name) and (data.pos - root.Position).Magnitude <= harvestrange then
-                    if gained == 0 then
-                         gained = 3
-                      --   print("[Tracker Fallback Match] Bush deletion registered within radius! Force-adding +3 fruits.")
-                    end
-                    trackedBushes[id] = nil
-                 end
-            end
-            
-             for _, bush in ipairs(bushes) do
-                if bush.entityid and not trackedBushes[bush.entityid] then
-                    trackedBushes[bush.entityid] = {
-                         name = bush.model.Name,
-                         pos = bush.model.PrimaryPart and bush.model.PrimaryPart.Position or root.Position
-                    }
+
+            local origChanged = invMod.itemChanged
+            invMod.itemChanged = function(layoutOrder, newQty, ...)
+                local inv = GameUtil and GameUtil.Data and GameUtil.Data.inventory
+                local entry = type(inv) == "table" and inv[layoutOrder]
+                local oldQty = (type(entry) == "table" and tonumber(entry.quantity)) or 0
+                local delta = (tonumber(newQty) or 0) - oldQty
+                if type(entry) == "table" and delta > 0 then
+                    pcall(recordHarvest, entry.name, delta)
                 end
-             end
-        end
-        
-        -- 3. Metric Calculations and UI Updates
-        if gained > 0 then
-             if not farmStats.timerStarted then
-                farmStats.timerStarted = true
-                farmStats.startTime = tick()
-                farmStats.sessionStartTime = tick()
-              --  print("[Tracker Stopwatch] Initial harvest verified.\nTimer running.")
+                return origChanged(layoutOrder, newQty, ...)
             end
-            farmStats.bloodfruits = farmStats.bloodfruits + gained
-            farmStats.totalAllTime = farmStats.totalAllTime + gained
+            hookedInv = true
         end
+    end)
 
-        local elapsed = farmStats.timerStarted and (tick() - farmStats.startTime) or 0
-        local totalSessionElapsed = farmStats.timerStarted and (tick() - farmStats.sessionStartTime) or 0
-        if elapsed < 1 then elapsed = 1 end 
-        
-        local bloodfruitsPerMin = farmStats.timerStarted and math.round((farmStats.bloodfruits / elapsed) * 60) or 0
-        local bloodfruitsPerHour = farmStats.timerStarted and math.round((farmStats.bloodfruits / elapsed) * 3600) or 0
-        
-        pcall(function()
-            BloodfruitParagraph:SetContent(string.format("%d (Per Min: %d |\nPer Hour: %d)", farmStats.bloodfruits, bloodfruitsPerMin, bloodfruitsPerHour))
-             if farmStats.timerStarted then
-                TotalAllTimeParagraph:SetContent(string.format("%d (Time: %s)", farmStats.totalAllTime, formatTime(totalSessionElapsed)))
-            else
-                TotalAllTimeParagraph:SetContent(string.format("%d (Time: 00:00:00 (Waiting for harvest...))", farmStats.totalAllTime))
-             end
-        end)
-         
-        task.wait(0.3)
-    end
-end)
+    -- Fallback polling per fruit only if inventory module hook wasn't available
+    local lastCounts = {}
+    task.spawn(function()
+        while true do
+            local targetFruit = (Options.fruitdropdown and Options.fruitdropdown.Value) or "Bloodfruit"
+            if not hookedInv then
+                local cur = getInventoryCount(targetFruit) or 0
+                local prev = lastCounts[targetFruit]
+                if prev == nil then
+                    lastCounts[targetFruit] = cur
+                else
+                    if cur > prev then
+                        recordHarvest(targetFruit, cur - prev)
+                    end
+                    lastCounts[targetFruit] = cur
+                end
+            end
 
--- Plant box placement (Tight Edge-to-Edge Snapping)
-function placeSingleSnappedBox()
-    local char = plr.Character
-    if not (char and char:FindFirstChild("HumanoidRootPart")) then return end
-    local pos = char.HumanoidRootPart.Position
-    local cam = workspace.CurrentCamera
-    local cursorPos = cam and cam.CFrame.Position or pos
-    local gs = 5.05
-    local sp = Vector3.new(math.round(pos.X/gs)*gs, pos.Y, math.round(pos.Z/gs)*gs)
-    local rp = RaycastParams.new()
-    rp.FilterType, rp.FilterDescendantsInstances, rp.IgnoreWater = Enum.RaycastFilterType.Blacklist, {char}, true
-     local rr = workspace:Raycast(Vector3.new(sp.X, sp.Y+100, sp.Z), Vector3.new(0,-200,0), rp)
-    local fp = rr and rr.Position or sp
-    local rot = CFrame.Angles(0, 0, 0)
-    if packets.PlaceStructure and packets.PlaceStructure.send then
-        packets.PlaceStructure.send({buildingName = "Plant Box", cframe = CFrame.new(fp)*rot, vec = fp, isMobile = false, cursor = cursorPos})
-    end
+            local count = farmStats.harvested[targetFruit] or 0
+            local elapsed = farmStats.timerStarted and (tick() - farmStats.startTime) or 0
+            local totalSessionElapsed = farmStats.timerStarted and (tick() - farmStats.sessionStartTime) or 0
+            if elapsed < 1 then elapsed = 1 end
+
+            local perMin = farmStats.timerStarted and math.round((count / elapsed) * 60) or 0
+            local perHour = farmStats.timerStarted and math.round((count / elapsed) * 3600) or 0
+
+            pcall(function()
+                BloodfruitParagraph:SetContent(string.format("%s: %d (Per Min: %d |\nPer Hour: %d)", targetFruit, count, perMin, perHour))
+                if farmStats.timerStarted then
+                    TotalAllTimeParagraph:SetContent(string.format("%d (Time: %s)", farmStats.totalAllTime, formatTime(totalSessionElapsed)))
+                else
+                    TotalAllTimeParagraph:SetContent(string.format("%d (Time: 00:00:00 (Waiting for harvest...))", farmStats.totalAllTime))
+                end
+            end)
+
+            task.wait(0.3)
+        end
+    end)
 end
-
-local placementConn
-Options.placeplantboxestoggle:OnChanged(function(v)
-    if v then
-        if placementConn then placementConn:Disconnect() end
-        placementConn = runs.Heartbeat:Connect(function() placeSingleSnappedBox(); task.wait(0.1) end)
-    else
-        if placementConn then placementConn:Disconnect(); placementConn = nil end
-    end
-end)
 
 
 Tabs.Den:AddSection("God Set")
@@ -1816,6 +1933,136 @@ Tabs.Den:AddButton({
         end
     end
 })
+
+Tabs.Den:AddSection("Auto Bed")
+local autoBedInterval = 180
+local lastAutoBedAt = 0
+
+Tabs.Den:AddToggle("AutoBedToggle", {
+    Title = "Auto Bed (On Spawn Screen Only)",
+    Default = false,
+    Callback = function(state)
+        if state then
+            lastAutoBedAt = 0
+        end
+    end
+})
+
+Tabs.Den:AddInput("AutoBedIntervalInput", {
+    Title = "Bed Interval (Seconds)",
+    Default = "180",
+    Numeric = true,
+    Callback = function(text)
+        local n = tonumber(text)
+        if n and n > 0 then
+            autoBedInterval = n
+        end
+    end
+})
+
+local function pressSpawnBedButton()
+    local pg = plr:FindFirstChild("PlayerGui")
+    local spawnGui = pg and pg:FindFirstChild("SpawnGui")
+    local cust = spawnGui and spawnGui:FindFirstChild("Customization")
+    local bedBtn = cust and cust:FindFirstChild("BedButton")
+    if bedBtn then
+        pcall(function()
+            if firesignal then
+                firesignal(bedBtn.Activated)
+                firesignal(bedBtn.MouseButton1Click)
+            end
+            if getconnections then
+                for _, con in ipairs(getconnections(bedBtn.Activated)) do
+                    pcall(function() con:Fire() end)
+                end
+            end
+        end)
+        return true
+    end
+    return false
+end
+
+task.spawn(function()
+    while true do
+        if Options.AutoBedToggle and Options.AutoBedToggle.Value then
+            local pg = plr:FindFirstChild("PlayerGui")
+            local spawnGui = pg and pg:FindFirstChild("SpawnGui")
+            local onSpawn = (spawnGui and spawnGui.Enabled) or (plr:GetAttribute("hasSpawned") == false)
+            if onSpawn then
+                local interval = tonumber(Options.AutoBedIntervalInput and Options.AutoBedIntervalInput.Value) or autoBedInterval
+                if interval < 1 then interval = 1 end
+                if (tick() - lastAutoBedAt) >= interval then
+                    if pressSpawnBedButton() then
+                        lastAutoBedAt = tick()
+                    end
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
+Tabs.Den:AddSection("Auto Execute")
+local autoExecUrl = "https://raw.githubusercontent.com/pohuisto/g/refs/heads/main/fsds.txt"
+local autoExecQueued = false
+
+Tabs.Den:AddInput("AutoExecuteUrlInput", {
+    Title = "Script URL (For Teleport Re-Execute)",
+    Default = autoExecUrl,
+    Numeric = false,
+    Callback = function(text)
+        if text and text ~= "" then
+            autoExecUrl = text
+        end
+    end
+})
+
+local function queueScriptWithRetry(targetUrl)
+    local q = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
+    if not q then
+        warn("[Auto Execute] queue_on_teleport not supported by executor")
+        return false
+    end
+    local payload = string.format([[
+        repeat task.wait() until game:IsLoaded() and game.Players.LocalPlayer
+        local url = %q
+        while true do
+            local ok, src = pcall(function() return game:HttpGet(url) end)
+            if ok and type(src) == "string" and #src > 50 then
+                local fn, err = loadstring(src)
+                if fn then
+                    local runOk, runErr = pcall(fn)
+                    if runOk then break end
+                    warn("[Auto Execute] run error:", runErr)
+                else
+                    warn("[Auto Execute] compile error:", err)
+                end
+            end
+            task.wait(2)
+        end
+    ]], targetUrl)
+    pcall(q, payload)
+    return true
+end
+
+Tabs.Den:AddToggle("AutoExecuteToggle", {
+    Title = "Auto Execute on Teleport (Retry Until Loaded)",
+    Default = false,
+    Callback = function(state)
+        if state and not autoExecQueued then
+            autoExecQueued = true
+            local u = (Options.AutoExecuteUrlInput and Options.AutoExecuteUrlInput.Value ~= "" and Options.AutoExecuteUrlInput.Value) or autoExecUrl
+            queueScriptWithRetry(u)
+        end
+    end
+})
+
+plr.OnTeleport:Connect(function()
+    if Options.AutoExecuteToggle and Options.AutoExecuteToggle.Value then
+        local u = (Options.AutoExecuteUrlInput and Options.AutoExecuteUrlInput.Value ~= "" and Options.AutoExecuteUrlInput.Value) or autoExecUrl
+        queueScriptWithRetry(u)
+    end
+end)
 
 -- Tiered Target Verification Helper
 local function getPrioritizedTarget()
