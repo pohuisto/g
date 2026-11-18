@@ -37,7 +37,7 @@ local SaveManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com
 local InterfaceManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayo arigato", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -432,29 +432,7 @@ Tabs.Main:CreateToggle("nocliplegstoggle", { Title = "Noclip Legs Only", Default
 Tabs.Main:CreateToggle("noclip_roottoggle", { Title = "Noclip HumanoidRootPart Only", Default = false })
 Tabs.Main:CreateToggle("noclipaccessoriestoggle", { Title = "Noclip Accessories Only", Default = false })
 
-local noclipConn
-Options.nocliptoggle:OnChanged(function(state)
-    if state then
-        if noclipConn then noclipConn:Disconnect() end
-        noclipConn = runs.Stepped:Connect(function()
-            local char = plr.Character
-            if char then
-                for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false
-                    end
-                end
-            end
-        end)
-    else
-        if noclipConn then
-            noclipConn:Disconnect()
-            noclipConn = nil
-        end
-    end
-end)
-
--- Body-part noclip toggles (work on top of / independent from the full Noclip above)
+-- Unified Noclip Engine (Full Noclip + Body-Part Noclip with proper CanCollide restore)
 local noclipPartGroups = {
     {opt = "noclipheadtoggle", names = {"Head"}},
     {opt = "nocliptorsotoggle", names = {"Torso", "UpperTorso", "LowerTorso"}},
@@ -467,40 +445,106 @@ for _, g in ipairs(noclipPartGroups) do
     for _, n in ipairs(g.names) do noclipPartLookup[n] = g.opt end
 end
 
-local noclipPartConn
-local function updPartNoclip()
-    local anyOn = false
+-- Parts that Roblox Humanoid forces CanCollide = true on every physics step by default
+local defaultCollidableParts = {
+    ["Head"] = true,
+    ["Torso"] = true,
+    ["UpperTorso"] = true,
+    ["LowerTorso"] = true,
+    ["HumanoidRootPart"] = true,
+}
+
+local noclipMasterConn = nil
+local noclipOrigCollide = setmetatable({}, { __mode = "k" })
+
+local function restoreNoclippedParts()
+    for part, orig in pairs(noclipOrigCollide) do
+        if typeof(part) == "Instance" and part.Parent then
+            pcall(function() part.CanCollide = orig end)
+        end
+        noclipOrigCollide[part] = nil
+    end
+end
+
+local function isAnyPartNoclipOn()
     for _, g in ipairs(noclipPartGroups) do
-        if Options[g.opt] and Options[g.opt].Value then anyOn = true break end
+        if Options[g.opt] and Options[g.opt].Value then return true end
     end
-    if Options.noclipaccessoriestoggle and Options.noclipaccessoriestoggle.Value then anyOn = true end
+    if Options.noclipaccessoriestoggle and Options.noclipaccessoriestoggle.Value then return true end
+    return false
+end
 
-    if not anyOn then
-        if noclipPartConn then noclipPartConn:Disconnect(); noclipPartConn = nil end
-        return
+local function shouldPartBeNoclipped(part, fullOn, partOn, accOn)
+    if fullOn then return true end
+    if not partOn then return false end
+
+    local opt = noclipPartLookup[part.Name]
+    if opt and Options[opt] and Options[opt].Value then
+        return true
     end
-    if noclipPartConn then return end
+    if accOn and (part:FindFirstAncestorOfClass("Accessory") or part:FindFirstAncestorOfClass("Accoutrement") or part:FindFirstAncestorOfClass("Tool")) then
+        return true
+    end
+    return false
+end
 
-    noclipPartConn = runs.Stepped:Connect(function()
-        local c = plr.Character
-        if not c then return end
-        local accOn = Options.noclipaccessoriestoggle and Options.noclipaccessoriestoggle.Value
-        for _, part in ipairs(c:GetDescendants()) do
-            if part:IsA("BasePart") then
-                local opt = noclipPartLookup[part.Name]
-                if opt and Options[opt] and Options[opt].Value then
-                    part.CanCollide = false
-                elseif accOn and part.Parent and part.Parent:IsA("Accessory") then
-                    part.CanCollide = false
+local function applyNoclipStep()
+    local c = plr.Character
+    if not c then return end
+    local fullOn = Options.nocliptoggle and Options.nocliptoggle.Value
+    local partOn = isAnyPartNoclipOn()
+    local accOn = Options.noclipaccessoriestoggle and Options.noclipaccessoriestoggle.Value
+
+    for _, part in ipairs(c:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if shouldPartBeNoclipped(part, fullOn, partOn, accOn) then
+                if noclipOrigCollide[part] == nil then
+                    noclipOrigCollide[part] = part.CanCollide
+                end
+                part.CanCollide = false
+            else
+                -- When specific body-part noclip is active (and not full noclip),
+                -- explicitly keep unselected core parts collidable if they were previously noclipped,
+                -- or if limbs/accessories are toggled so you can isolate collision properly.
+                if noclipOrigCollide[part] ~= nil then
+                    part.CanCollide = noclipOrigCollide[part]
+                    noclipOrigCollide[part] = nil
+                elseif partOn and not fullOn and defaultCollidableParts[part.Name] == nil then
+                    -- Limbs (Left Arm, Right Arm, Left Leg, Right Leg) have CanCollide=false in Roblox by default;
+                    -- if the user turned on a body-part noclip mode (e.g. Torso/Head/Root noclip) and wants non-selected
+                    -- limbs to collide or vice versa, keep their original state unless toggled off.
                 end
             end
         end
-    end)
+    end
 end
+
+local function updMasterNoclip()
+    local fullOn = Options.nocliptoggle and Options.nocliptoggle.Value
+    local partOn = isAnyPartNoclipOn()
+
+    if not fullOn and not partOn then
+        if noclipMasterConn then
+            noclipMasterConn:Disconnect()
+            noclipMasterConn = nil
+        end
+        restoreNoclippedParts()
+        return
+    end
+
+    -- Refresh states immediately on toggle change
+    applyNoclipStep()
+
+    if not noclipMasterConn then
+        noclipMasterConn = runs.Stepped:Connect(applyNoclipStep)
+    end
+end
+
+Options.nocliptoggle:OnChanged(updMasterNoclip)
 for _, g in ipairs(noclipPartGroups) do
-    Options[g.opt]:OnChanged(updPartNoclip)
+    Options[g.opt]:OnChanged(updMasterNoclip)
 end
-Options.noclipaccessoriestoggle:OnChanged(updPartNoclip)
+Options.noclipaccessoriestoggle:OnChanged(updMasterNoclip)
 
 local function updmsa()
     if slopecon then slopecon:Disconnect(); slopecon = nil end
@@ -704,10 +748,20 @@ do
     end)
 end
 
--- Helper functions
-local function swingtool(entityIds)
-    if not (packets.SwingTool and packets.SwingTool.send) then return end
-    if not entityIds or #entityIds == 0 then return end
+-- Helper functions (Global swing arbiter prevents Resource Aura and Critter Aura from dropping packets when both are ON)
+local lastGlobalSwingAt = 0
+local lastSwingSource = nil
+
+local function swingtool(entityIds, minGap, source)
+    if not (packets.SwingTool and packets.SwingTool.send) then return false end
+    if not entityIds or #entityIds == 0 then return false end
+    local now = tick()
+    local gap = minGap or 0.05
+    if now - lastGlobalSwingAt < gap then
+        return false
+    end
+    lastGlobalSwingAt = now
+    lastSwingSource = source
     pcall(function()
         packets.SwingTool.send({
             entityIDs = entityIds, -- raw numbers
@@ -715,6 +769,7 @@ local function swingtool(entityIds)
             timestamp = clock.getServerTime(true)
         })
     end)
+    return true
 end
 
 local function pickup(entityid)
@@ -739,7 +794,7 @@ Options.itemdropdown:OnChanged(function(v)
     for item, state in pairs(v) do if state then table.insert(selecteditems, item) end end
 end)
 
--- Resource Aura (optimized)
+-- Resource Aura (optimized, independent from Critter Aura with fair turn-taking)
 local resourceActive, resourceConn = false, nil
 local lastResourceTime, lastResourceScan = 0, 0
 local cachedTargets = {}
@@ -762,7 +817,7 @@ local function scanResources(range)
     local rangeSq = range * range
 
     local function tryAdd(model)
-        if not model:IsA("Model") then return end
+        if not model:IsA("Model") or not model.Parent then return end
         local eid = model:GetAttribute("EntityID")
         if not eid then return end
         local pp = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
@@ -770,7 +825,7 @@ local function scanResources(range)
         local delta = pp.Position - charPos
         local distSq = delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z
         if distSq <= rangeSq then
-            table.insert(list, {eid = eid, distSq = distSq})
+            table.insert(list, {eid = eid, model = model, pp = pp, distSq = distSq})
         end
     end
 
@@ -813,6 +868,38 @@ local function scanResources(range)
     return list
 end
 
+local function filterValidTargets(cached, range, checkAlive)
+    if not root then return {} end
+    local charPos = root.Position
+    local rangeSq = range * range
+    local valid = {}
+    for i = 1, #cached do
+        local entry = cached[i]
+        local m = entry.model
+        local pp = entry.pp
+        if m and m.Parent and pp and pp.Parent then
+            local alive = true
+            if checkAlive then
+                local h = m:FindFirstChildOfClass("Humanoid")
+                if h and h.Health <= 0 then alive = false end
+                local healthAttr = m:GetAttribute("Health")
+                if type(healthAttr) == "number" and healthAttr <= 0 then alive = false end
+            end
+            if alive then
+                local delta = pp.Position - charPos
+                local distSq = delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z
+                if distSq <= rangeSq then
+                    entry.distSq = distSq
+                    valid[#valid + 1] = entry
+                end
+            end
+        end
+    end
+    return valid
+end
+
+local cachedCritterTargets = {}
+
 local function startResource()
     if resourceActive then return end
     resourceActive = true
@@ -825,7 +912,7 @@ local function startResource()
             return
         end
 
-if not root then return end
+        if not root then return end
 
         local ct = tick()
         local cooldown = tonumber(Options.resourcecooldownslider.Value) or 0.1
@@ -834,13 +921,21 @@ if not root then return end
         local range = tonumber(Options.resourceaurarange.Value) or 20
         local tc = tonumber(Options.resourcetargetdropdown.Value) or 1
 
-        -- Rescan only every 0.45s instead of every swing
-        if ct - lastResourceScan > 0.45 or #cachedTargets == 0 then
+        cachedTargets = filterValidTargets(cachedTargets, range, false)
+        if ct - lastResourceScan > 0.25 or #cachedTargets == 0 then
             cachedTargets = scanResources(range)
             lastResourceScan = ct
         end
 
         if #cachedTargets == 0 then return end
+
+        -- If Critter Aura is also on, has targets ready, and Resource Aura swung last, let Critter Aura take its turn
+        local critterAlsoOn = Options.critterauratoggle and Options.critterauratoggle.Value
+        local critterCd = (Options.crittercooldownslider and tonumber(Options.crittercooldownslider.Value)) or 0.1
+        local sharedGap = math.max(0.04, math.min(cooldown, critterCd) * 0.5)
+        if critterAlsoOn and #cachedCritterTargets > 0 and lastSwingSource == "resource" and (ct - lastGlobalSwingAt) < critterCd then
+            return
+        end
 
         local sel = {}
         local limit = math.min(tc, #cachedTargets)
@@ -848,8 +943,9 @@ if not root then return end
             sel[i] = cachedTargets[i].eid
         end
 
-        swingtool(sel)
-        lastResourceTime = ct
+        if swingtool(sel, critterAlsoOn and sharedGap or 0, "resource") then
+            lastResourceTime = ct
+        end
     end)
 end
 
@@ -926,10 +1022,9 @@ function StopDeployableAura()
     if deployableAuraConnection then deployableAuraConnection:Disconnect() end
 end
 
--- Critter Aura (optimized)
+-- Critter Aura (optimized, independent from Resource Aura with fair turn-taking)
 local SchuylerActive, critterConn = false, nil
 local lastCritterTime, lastCritterScan = 0, 0
-local cachedCritterTargets = {}
 
 local function scanCritters(range)
     local list = {}
@@ -940,15 +1035,20 @@ local function scanCritters(range)
     if not folder then return list end
 
     for _, c in ipairs(folder:GetChildren()) do
-        if c:IsA("Model") then
+        if c:IsA("Model") and c.Parent then
             local eid = c:GetAttribute("EntityID")
             if eid then
-                local pp = c.PrimaryPart or c:FindFirstChildWhichIsA("BasePart")
-                if pp then
-                    local delta = pp.Position - charPos
-                    local distSq = delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z
-                    if distSq <= rangeSq then
-                        table.insert(list, {eid = eid, distSq = distSq})
+                local h = c:FindFirstChildOfClass("Humanoid")
+                local healthAttr = c:GetAttribute("Health")
+                local alive = (not h or h.Health > 0) and (type(healthAttr) ~= "number" or healthAttr > 0)
+                if alive then
+                    local pp = c.PrimaryPart or c:FindFirstChildWhichIsA("BasePart")
+                    if pp then
+                        local delta = pp.Position - charPos
+                        local distSq = delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z
+                        if distSq <= rangeSq then
+                            table.insert(list, {eid = eid, model = c, pp = pp, distSq = distSq})
+                        end
                     end
                 end
             end
@@ -971,7 +1071,7 @@ local function startCritter()
             return
         end
 
-        if not root or not GameUtil.Data.equipped then return end
+        if not root then return end
 
         local ct = tick()
         local cooldown = tonumber(Options.crittercooldownslider.Value) or 0.1
@@ -980,12 +1080,21 @@ local function startCritter()
         local range = tonumber(Options.critterrangeslider.Value) or 20
         local tc = tonumber(Options.crittertargetdropdown.Value) or 1
 
-        if ct - lastCritterScan > 0.45 or #cachedCritterTargets == 0 then
+        cachedCritterTargets = filterValidTargets(cachedCritterTargets, range, true)
+        if ct - lastCritterScan > 0.25 or #cachedCritterTargets == 0 then
             cachedCritterTargets = scanCritters(range)
             lastCritterScan = ct
         end
 
         if #cachedCritterTargets == 0 then return end
+
+        -- If Resource Aura is also on, has targets ready, and Critter Aura swung last, let Resource Aura take its turn
+        local resourceAlsoOn = Options.resourceauratoggle and Options.resourceauratoggle.Value
+        local resourceCd = (Options.resourcecooldownslider and tonumber(Options.resourcecooldownslider.Value)) or 0.1
+        local sharedGap = math.max(0.04, math.min(cooldown, resourceCd) * 0.5)
+        if resourceAlsoOn and #cachedTargets > 0 and lastSwingSource == "critter" and (ct - lastGlobalSwingAt) < resourceCd then
+            return
+        end
 
         local sel = {}
         local limit = math.min(tc, #cachedCritterTargets)
@@ -993,8 +1102,9 @@ local function startCritter()
             sel[i] = cachedCritterTargets[i].eid
         end
 
-        swingtool(sel)
-        lastCritterTime = ct
+        if swingtool(sel, resourceAlsoOn and sharedGap or 0, "critter") then
+            lastCritterTime = ct
+        end
     end)
 end
 
@@ -2036,12 +2146,50 @@ Tabs.Den:AddInput("AutoBedIntervalInput", {
     end
 })
 
+local function syncSpawnStateIfSpawned()
+    local pg = plr:FindFirstChild("PlayerGui")
+    local spawnGui = pg and pg:FindFirstChild("SpawnGui")
+    local mainGui = pg and pg:FindFirstChild("MainGui")
+    local topbar = pg and pg:FindFirstChild("Topbar")
+    local hasSpawned = plr:GetAttribute("hasSpawned")
+
+    if hasSpawned == true or (spawnGui and not spawnGui.Enabled) then
+        if spawnGui and spawnGui.Enabled then spawnGui.Enabled = false end
+        if mainGui and not mainGui.Enabled then mainGui.Enabled = true end
+        if topbar and not topbar.Enabled then topbar.Enabled = true end
+
+        local c = plr.Character
+        local h = c and c:FindFirstChildOfClass("Humanoid")
+        local cam = workspace.CurrentCamera
+        if cam and h then
+            if cam.CameraType ~= Enum.CameraType.Custom then
+                cam.CameraType = Enum.CameraType.Custom
+            end
+            if cam.CameraSubject ~= h then
+                cam.CameraSubject = h
+            end
+        end
+        pcall(function()
+            local gameFolder = rs:FindFirstChild("Game")
+            local functionsMod = gameFolder and gameFolder:FindFirstChild("functions")
+            if functionsMod then
+                local ok, funcs = pcall(require, functionsMod)
+                if ok and type(funcs) == "table" then
+                    funcs.lockTorsoOrientation = true
+                end
+            end
+        end)
+    end
+end
+
 local function pressSpawnBedButton()
     local pg = plr:FindFirstChild("PlayerGui")
     local spawnGui = pg and pg:FindFirstChild("SpawnGui")
     local cust = spawnGui and spawnGui:FindFirstChild("Customization")
     local bedBtn = cust and cust:FindFirstChild("BedButton")
+
     if bedBtn then
+        pcall(function() bedBtn.Activated:Fire() end)
         pcall(function()
             if firesignal then
                 firesignal(bedBtn.Activated)
@@ -2053,9 +2201,34 @@ local function pressSpawnBedButton()
                 end
             end
         end)
+        local t0 = tick()
+        while (tick() - t0) < 2.0 do
+            if (not spawnGui or not spawnGui.Enabled) and plr:GetAttribute("hasSpawned") == true then
+                break
+            end
+            task.wait(0.1)
+        end
+        syncSpawnStateIfSpawned()
         return true
     end
-    return false
+
+    if pg then
+        for _, gui in ipairs(pg:GetDescendants()) do
+            if gui.Name == "BedButton" then
+                pcall(function() gui.Activated:Fire() end)
+                pcall(function() if firesignal then firesignal(gui.Activated) end end)
+            end
+        end
+    end
+
+    local ok, spawned = pcall(function()
+        return rs.Events.SpawnFirst:InvokeServer(true)
+    end)
+    if ok and spawned then
+        plr:SetAttribute("hasSpawned", true)
+    end
+    syncSpawnStateIfSpawned()
+    return true
 end
 
 task.spawn(function()
@@ -2063,7 +2236,7 @@ task.spawn(function()
         if Options.AutoBedToggle and Options.AutoBedToggle.Value then
             local pg = plr:FindFirstChild("PlayerGui")
             local spawnGui = pg and pg:FindFirstChild("SpawnGui")
-            local onSpawn = (spawnGui and spawnGui.Enabled) or (plr:GetAttribute("hasSpawned") == false)
+            local onSpawn = (spawnGui and spawnGui.Enabled) and (plr:GetAttribute("hasSpawned") ~= true)
             if onSpawn then
                 local interval = tonumber(Options.AutoBedIntervalInput and Options.AutoBedIntervalInput.Value) or autoBedInterval
                 if interval < 1 then interval = 1 end
@@ -2072,6 +2245,8 @@ task.spawn(function()
                         lastAutoBedAt = tick()
                     end
                 end
+            else
+                syncSpawnStateIfSpawned()
             end
         end
         task.wait(0.5)
