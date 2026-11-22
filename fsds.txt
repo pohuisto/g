@@ -1,5 +1,5 @@
 print("loading cooked")
-print("----------------------------------)
+print("----------------------------------")
 
 if game:GetService("ReplicatedStorage"):GetAttribute("__FSDS_UI_CREATED") then
     return
