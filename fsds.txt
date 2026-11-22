@@ -1,5 +1,5 @@
 print("loading cooked")
-print("----------------------------------")
+print("----------------------------------e)
 
 if game:GetService("ReplicatedStorage"):GetAttribute("__FSDS_UI_CREATED") then
     return
@@ -37,7 +37,7 @@ local SaveManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com
 local InterfaceManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo arigato", SubTitle = "", TabWidth = 160,
+    Title = "datebayo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -137,6 +137,7 @@ Tabs.Main:CreateSlider("freecamspeed", { Title = "Free Cam Speed", Min = 10, Max
 
 Tabs.Main:AddSection("Performance")
 Tabs.Main:CreateToggle("fpsboosttoggle", { Title = "FPS Boost", Default = false })
+Tabs.Main:CreateToggle("disable3drendertoggle", { Title = "Disable 3D Rendering (AFK)", Default = false })
 
 -- Map Tab
 Tabs.Map:AddSection("Resource Aura")
@@ -456,6 +457,48 @@ local defaultCollidableParts = {
 
 local noclipMasterConn = nil
 local noclipOrigCollide = setmetatable({}, { __mode = "k" })
+local noclipCachedChar = nil
+local noclipCachedParts = {} -- { [BasePart] = isAccessoryOrTool }
+local noclipCharAddedConn = nil
+local noclipDescAddConn = nil
+local noclipDescRemConn = nil
+
+local function isAccessoryPart(part)
+    return (part:FindFirstAncestorOfClass("Accessory") ~= nil)
+        or (part:FindFirstAncestorOfClass("Accoutrement") ~= nil)
+        or (part:FindFirstAncestorOfClass("Tool") ~= nil)
+end
+
+local function rebuildNoclipCache(c)
+    if noclipDescAddConn then noclipDescAddConn:Disconnect(); noclipDescAddConn = nil end
+    if noclipDescRemConn then noclipDescRemConn:Disconnect(); noclipDescRemConn = nil end
+    table.clear(noclipCachedParts)
+    noclipCachedChar = c
+    if not c then return end
+
+    for _, d in ipairs(c:GetDescendants()) do
+        if d:IsA("BasePart") then
+            noclipCachedParts[d] = isAccessoryPart(d)
+        end
+    end
+
+    noclipDescAddConn = c.DescendantAdded:Connect(function(d)
+        if d:IsA("BasePart") then
+            noclipCachedParts[d] = isAccessoryPart(d)
+        end
+    end)
+    noclipDescRemConn = c.DescendantRemoving:Connect(function(d)
+        noclipCachedParts[d] = nil
+        noclipOrigCollide[d] = nil
+    end)
+end
+
+if plr.Character then
+    rebuildNoclipCache(plr.Character)
+end
+noclipCharAddedConn = plr.CharacterAdded:Connect(function(c)
+    rebuildNoclipCache(c)
+end)
 
 local function restoreNoclippedParts()
     for part, orig in pairs(noclipOrigCollide) do
@@ -474,7 +517,7 @@ local function isAnyPartNoclipOn()
     return false
 end
 
-local function shouldPartBeNoclipped(part, fullOn, partOn, accOn)
+local function shouldPartBeNoclipped(part, isAcc, fullOn, partOn, accOn)
     if fullOn then return true end
     if not partOn then return false end
 
@@ -482,7 +525,7 @@ local function shouldPartBeNoclipped(part, fullOn, partOn, accOn)
     if opt and Options[opt] and Options[opt].Value then
         return true
     end
-    if accOn and (part:FindFirstAncestorOfClass("Accessory") or part:FindFirstAncestorOfClass("Accoutrement") or part:FindFirstAncestorOfClass("Tool")) then
+    if accOn and isAcc then
         return true
     end
     return false
@@ -491,30 +534,30 @@ end
 local function applyNoclipStep()
     local c = plr.Character
     if not c then return end
+    if c ~= noclipCachedChar then
+        rebuildNoclipCache(c)
+    end
     local fullOn = Options.nocliptoggle and Options.nocliptoggle.Value
     local partOn = isAnyPartNoclipOn()
     local accOn = Options.noclipaccessoriestoggle and Options.noclipaccessoriestoggle.Value
 
-    for _, part in ipairs(c:GetDescendants()) do
-        if part:IsA("BasePart") then
-            if shouldPartBeNoclipped(part, fullOn, partOn, accOn) then
+    for part, isAcc in pairs(noclipCachedParts) do
+        if part.Parent then
+            if shouldPartBeNoclipped(part, isAcc, fullOn, partOn, accOn) then
                 if noclipOrigCollide[part] == nil then
                     noclipOrigCollide[part] = part.CanCollide
                 end
-                part.CanCollide = false
+                if part.CanCollide then
+                    part.CanCollide = false
+                end
             else
-                -- When specific body-part noclip is active (and not full noclip),
-                -- explicitly keep unselected core parts collidable if they were previously noclipped,
-                -- or if limbs/accessories are toggled so you can isolate collision properly.
                 if noclipOrigCollide[part] ~= nil then
                     part.CanCollide = noclipOrigCollide[part]
                     noclipOrigCollide[part] = nil
-                elseif partOn and not fullOn and defaultCollidableParts[part.Name] == nil then
-                    -- Limbs (Left Arm, Right Arm, Left Leg, Right Leg) have CanCollide=false in Roblox by default;
-                    -- if the user turned on a body-part noclip mode (e.g. Torso/Head/Root noclip) and wants non-selected
-                    -- limbs to collide or vice versa, keep their original state unless toggled off.
                 end
             end
+        else
+            noclipCachedParts[part] = nil
         end
     end
 end
@@ -746,6 +789,14 @@ do
     Options.fpsboosttoggle:OnChanged(function(state)
         applyFpsBoost(state)
     end)
+
+    if Options.disable3drendertoggle then
+        Options.disable3drendertoggle:OnChanged(function(state)
+            pcall(function()
+                runs:Set3dRenderingEnabled(not state)
+            end)
+        end)
+    end
 end
 
 -- Helper functions (Global swing arbiter prevents Resource Aura and Critter Aura from dropping packets when both are ON)
@@ -1405,26 +1456,56 @@ task.spawn(function()
     end
 end)
 
--- Drop loops
+-- Drop loops (connected only while enabled for zero idle Heartbeat cost)
 local debounce = 0
 local cd = 0
-runs.Heartbeat:Connect(function()
-    if Options.droptoggle.Value then
-        if tick() - debounce >= cd then
-            drop(Options.dropdropdown.Value)
-            debounce = tick()
-        end
-    end
-end)
+local dropConn = nil
+local dropManualConn = nil
 
-runs.Heartbeat:Connect(function()
-    if Options.droptogglemanual.Value then
-        if tick() - debounce >= cd then
-            drop(Options.droptextbox.Value)
-            debounce = tick()
+local function syncDropConn(state)
+    if state then
+        if not dropConn then
+            dropConn = runs.Heartbeat:Connect(function()
+                if not Options.droptoggle.Value then
+                    if dropConn then dropConn:Disconnect(); dropConn = nil end
+                    return
+                end
+                if tick() - debounce >= cd then
+                    drop(Options.dropdropdown.Value)
+                    debounce = tick()
+                end
+            end)
         end
+    elseif dropConn then
+        dropConn:Disconnect()
+        dropConn = nil
     end
-end)
+end
+
+local function syncDropManualConn(state)
+    if state then
+        if not dropManualConn then
+            dropManualConn = runs.Heartbeat:Connect(function()
+                if not Options.droptogglemanual.Value then
+                    if dropManualConn then dropManualConn:Disconnect(); dropManualConn = nil end
+                    return
+                end
+                if tick() - debounce >= cd then
+                    drop(Options.droptextbox.Value)
+                    debounce = tick()
+                end
+            end)
+        end
+    elseif dropManualConn then
+        dropManualConn:Disconnect()
+        dropManualConn = nil
+    end
+end
+
+Options.droptoggle:OnChanged(syncDropConn)
+Options.droptogglemanual:OnChanged(syncDropManualConn)
+syncDropConn(Options.droptoggle.Value)
+syncDropManualConn(Options.droptogglemanual.Value)
 
 Tabs.Pickup:AddToggle("dropalltoggle", {
     Title = "Auto Drop All",
@@ -1843,28 +1924,73 @@ local function plant(entityid, itemID)
     end
 end
 
--- Hyper-optimized auto plant loop (Fixed per-plant yielding)
+-- Hyper-optimized auto plant loop (event-driven Plant Box cache + squared distance)
 local localPlantDebounce = {}
+local trackedPlantBoxes = {} -- [box] = primary/basepart
+local plantDeployablesFolder = nil
+local plantChildAddConn = nil
+local plantChildRemConn = nil
+
+local function registerPlantBox(box)
+    if box and box.Name == "Plant Box" then
+        local ppart = box.PrimaryPart or box:FindFirstChildWhichIsA("BasePart")
+        if ppart then
+            trackedPlantBoxes[box] = ppart
+        end
+    end
+end
+
+local function hookPlantDeployables(folder)
+    if plantChildAddConn then plantChildAddConn:Disconnect(); plantChildAddConn = nil end
+    if plantChildRemConn then plantChildRemConn:Disconnect(); plantChildRemConn = nil end
+    table.clear(trackedPlantBoxes)
+    plantDeployablesFolder = folder
+    if not folder then return end
+
+    for _, child in ipairs(folder:GetChildren()) do
+        registerPlantBox(child)
+    end
+    plantChildAddConn = folder.ChildAdded:Connect(function(child)
+        if child.Name == "Plant Box" then
+            registerPlantBox(child)
+            if not trackedPlantBoxes[child] then
+                task.delay(0.1, function()
+                    if child.Parent == folder then registerPlantBox(child) end
+                end)
+            end
+        end
+    end)
+    plantChildRemConn = folder.ChildRemoved:Connect(function(child)
+        trackedPlantBoxes[child] = nil
+    end)
+end
+
 task.spawn(function()
     while true do
         if not Options.planttoggle.Value then 
             table.clear(localPlantDebounce)
-            task.wait(0.1) 
+            task.wait(0.15) 
             continue 
         end
         
         local range = tonumber(Options.plantrange.Value) or 30
+        local rangeSq = range * range
         local delay = tonumber(Options.plantdelay.Value) or 0.1
         local itemID = fruittoitemid[Options.fruitdropdown.Value] or 94
         
         local deployables = workspace:FindFirstChild("Deployables")
+        if deployables ~= plantDeployablesFolder then
+            hookPlantDeployables(deployables)
+        end
+
         if deployables and root then
             local charPos = root.Position
-            local children = deployables:GetChildren()
+            local cx, cy, cz = charPos.X, charPos.Y, charPos.Z
             
-            for i = 1, #children do
-                local box = children[i]
-                if box.Name == "Plant Box" then
+            for box, ppart in pairs(trackedPlantBoxes) do
+                if not box.Parent or not ppart.Parent then
+                    trackedPlantBoxes[box] = nil
+                else
                     local hasSeed = box:FindFirstChild("Seed")
                     local entityid = box:GetAttribute("EntityID")
                     
@@ -1872,20 +1998,17 @@ task.spawn(function()
                     if hasSeed and entityid then
                         localPlantDebounce[entityid] = nil
                     elseif not hasSeed and entityid and not localPlantDebounce[entityid] then
-                        local ppart = box.PrimaryPart or box:FindFirstChildWhichIsA("BasePart")
-                        if ppart then
-                            local dist = (ppart.Position - charPos).Magnitude
-                            if dist <= range then
-                                localPlantDebounce[entityid] = tick()
-                                plant(entityid, itemID)
-                                
-                                -- Apply the slider delay PER PLANT to prevent packet dropping.
-                                -- If slider is 0, yield exactly 1 frame so the server doesn't rate-limit.
-                                if delay <= 0.01 then 
-                                    runs.Heartbeat:Wait() 
-                                else 
-                                    task.wait(0) 
-                                end
+                        local p = ppart.Position
+                        local dx, dy, dz = p.X - cx, p.Y - cy, p.Z - cz
+                        if (dx * dx + dy * dy + dz * dz) <= rangeSq then
+                            localPlantDebounce[entityid] = tick()
+                            plant(entityid, itemID)
+                            
+                            -- Apply the slider delay PER PLANT to prevent packet dropping.
+                            if delay <= 0.01 then 
+                                runs.Heartbeat:Wait() 
+                            else 
+                                task.wait(0) 
                             end
                         end
                     end
@@ -1901,8 +2024,8 @@ task.spawn(function()
             end
         end
         
-        -- Base loop idle
-        runs.Heartbeat:Wait() 
+        -- Base loop idle (throttled for stable 60 FPS)
+        task.wait(0.08)
     end
 end)
 
