@@ -1,5 +1,5 @@
 print("loading cooked")
-print("----------------------------------")
+print("----------------------------------e")
 
 if game:GetService("ReplicatedStorage"):GetAttribute("__FSDS_UI_CREATED") then
     return
@@ -37,7 +37,7 @@ local SaveManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com
 local InterfaceManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayo", SubTitle = "", TabWidth = 160,
+    Title = "datebayow", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -159,6 +159,43 @@ Tabs.Map:CreateToggle("critterauratoggle", { Title = "Critter Aura", Default = f
 Tabs.Map:CreateSlider("critterrangeslider", { Title = "Range", Min = 1, Max = 20, Rounding = 1, Default = 20 })
 Tabs.Map:CreateDropdown("crittertargetdropdown", { Title = "Max Targets", Values = { "1", "2", "3", "4", "5", "6" }, Default = "1" })
 Tabs.Map:CreateSlider("crittercooldownslider", { Title = "Swing Cooldown (s)", Min = 0.01, Max = 1.01, Rounding = 2, Default = 0.1 })
+
+Tabs.Map:AddSection("Map Cleanup")
+Tabs.Map:AddButton({
+    Title = "Delete Shipwrecks & Meteors",
+    Callback = function()
+        local removed = 0
+        -- Clear exact folders without destroying the folders themselves (so game scripts don't error)
+        local exactFolders = { "MeteorParts", "Meteors", "ShipwreckParts" }
+        for _, folderName in ipairs(exactFolders) do
+            local folder = workspace:FindFirstChild(folderName)
+            if folder then
+                for _, child in ipairs(folder:GetChildren()) do
+                    local ok = pcall(function() child:Destroy() end)
+                    if ok then removed += 1 end
+                end
+            end
+        end
+        -- Also delete Meteor models inside workspace.Resources (e.g. Meteor Rock, Crystal Meteor Rock/Core)
+        local resources = workspace:FindFirstChild("Resources")
+        if resources then
+            for _, child in ipairs(resources:GetChildren()) do
+                local n = string.lower(child.Name)
+                if n:find("meteor", 1, true) or n:find("shipwreck", 1, true) then
+                    local ok = pcall(function() child:Destroy() end)
+                    if ok then removed += 1 end
+                end
+            end
+        end
+        pcall(function()
+            Library:Notify({
+                Title = "Map Cleanup",
+                Content = "Deleted " .. tostring(removed) .. " shipwreck/meteor object(s).",
+                Duration = 4
+            })
+        end)
+    end
+})
 
 -- Pickup Tab
 Tabs.Pickup:AddSection("Auto Pickup")
