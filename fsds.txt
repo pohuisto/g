@@ -1,5 +1,5 @@
 print("loading cooked")
-print("----------------------------------e")
+print("----------------------------------")
 
 if game:GetService("ReplicatedStorage"):GetAttribute("__FSDS_UI_CREATED") then
     return
@@ -37,7 +37,7 @@ local SaveManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com
 local InterfaceManager = loadstring(fetchWithRetry("https://raw.githubusercontent.com/1dontgiveaf/Fluent-Renewed/refs/heads/main/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "datebayow", SubTitle = "", TabWidth = 160,
+    Title = "datebayowowo", SubTitle = "", TabWidth = 160,
     Size = UDim2.fromOffset(830, 525), Resize = true, MinSize = Vector2.new(470, 380),
     Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl
 }
@@ -161,41 +161,146 @@ Tabs.Map:CreateDropdown("crittertargetdropdown", { Title = "Max Targets", Values
 Tabs.Map:CreateSlider("crittercooldownslider", { Title = "Swing Cooldown (s)", Min = 0.01, Max = 1.01, Rounding = 2, Default = 0.1 })
 
 Tabs.Map:AddSection("Map Cleanup")
-Tabs.Map:AddButton({
-    Title = "Delete Shipwrecks & Meteors",
-    Callback = function()
-        local removed = 0
-        -- Clear exact folders without destroying the folders themselves (so game scripts don't error)
-        local exactFolders = { "MeteorParts", "Meteors", "ShipwreckParts" }
-        for _, folderName in ipairs(exactFolders) do
-            local folder = workspace:FindFirstChild(folderName)
-            if folder then
-                for _, child in ipairs(folder:GetChildren()) do
-                    local ok = pcall(function() child:Destroy() end)
-                    if ok then removed += 1 end
-                end
+
+-- Toggle 1: Auto Delete Shipwrecks & Meteors (instant ChildAdded hooks + initial sweep)
+do
+    local smConns = {}
+    local smExactFolders = { "MeteorParts", "Meteors", "ShipwreckParts" }
+
+    local function isMeteorOrShipwreck(obj)
+        local n = string.lower(obj.Name)
+        return n:find("meteor", 1, true) ~= nil or n:find("shipwreck", 1, true) ~= nil
+    end
+
+    local function destroyDeferred(obj)
+        task.defer(function()
+            if obj and obj.Parent then
+                pcall(function() obj:Destroy() end)
             end
-        end
-        -- Also delete Meteor models inside workspace.Resources (e.g. Meteor Rock, Crystal Meteor Rock/Core)
-        local resources = workspace:FindFirstChild("Resources")
-        if resources then
-            for _, child in ipairs(resources:GetChildren()) do
-                local n = string.lower(child.Name)
-                if n:find("meteor", 1, true) or n:find("shipwreck", 1, true) then
-                    local ok = pcall(function() child:Destroy() end)
-                    if ok then removed += 1 end
-                end
-            end
-        end
-        pcall(function()
-            Library:Notify({
-                Title = "Map Cleanup",
-                Content = "Deleted " .. tostring(removed) .. " shipwreck/meteor object(s).",
-                Duration = 4
-            })
         end)
     end
-})
+
+    local function stopShipwreckMeteorCleanup()
+        for _, c in ipairs(smConns) do
+            pcall(function() c:Disconnect() end)
+        end
+        table.clear(smConns)
+    end
+
+    local function attachFolderInstant(folder, filterFn)
+        if not folder then return end
+        for _, child in ipairs(folder:GetChildren()) do
+            if not filterFn or filterFn(child) then
+                pcall(function() child:Destroy() end)
+            end
+        end
+        table.insert(smConns, folder.ChildAdded:Connect(function(child)
+            if not filterFn or filterFn(child) then
+                destroyDeferred(child)
+            end
+        end))
+    end
+
+    local function startShipwreckMeteorCleanup()
+        stopShipwreckMeteorCleanup()
+        for _, folderName in ipairs(smExactFolders) do
+            attachFolderInstant(workspace:FindFirstChild(folderName), nil)
+        end
+        attachFolderInstant(workspace:FindFirstChild("Resources"), isMeteorOrShipwreck)
+        -- Watch workspace in case any of those folders are recreated later
+        table.insert(smConns, workspace.ChildAdded:Connect(function(child)
+            for _, folderName in ipairs(smExactFolders) do
+                if child.Name == folderName then
+                    attachFolderInstant(child, nil)
+                    return
+                end
+            end
+            if child.Name == "Resources" then
+                attachFolderInstant(child, isMeteorOrShipwreck)
+            end
+        end))
+    end
+
+    Tabs.Map:AddToggle("AutoDeleteShipwrecksMeteorsToggle", {
+        Title = "Auto Delete Shipwrecks & Meteors",
+        Default = false,
+        Callback = function(state)
+            if state then
+                startShipwreckMeteorCleanup()
+            else
+                stopShipwreckMeteorCleanup()
+            end
+        end
+    })
+end
+
+-- Toggle 2: Auto Delete Trees & Bushes (Big Tree, Tree, Bush, Big Bush)
+do
+    local tbConns = {}
+    local tbTargets = {
+        ["Big Tree"] = true,
+        ["Tree"] = true,
+        ["Bush"] = true,
+        ["Big Bush"] = true,
+    }
+
+    local function isTargetTreeOrBush(obj)
+        return obj and tbTargets[obj.Name] == true
+    end
+
+    local function destroyDeferred(obj)
+        task.defer(function()
+            if obj and obj.Parent then
+                pcall(function() obj:Destroy() end)
+            end
+        end)
+    end
+
+    local function stopTreeBushCleanup()
+        for _, c in ipairs(tbConns) do
+            pcall(function() c:Disconnect() end)
+        end
+        table.clear(tbConns)
+    end
+
+    local function attachTreeBushContainer(container)
+        if not container then return end
+        for _, child in ipairs(container:GetChildren()) do
+            if isTargetTreeOrBush(child) then
+                pcall(function() child:Destroy() end)
+            end
+        end
+        table.insert(tbConns, container.ChildAdded:Connect(function(child)
+            if isTargetTreeOrBush(child) then
+                destroyDeferred(child)
+            end
+        end))
+    end
+
+    local function startTreeBushCleanup()
+        stopTreeBushCleanup()
+        attachTreeBushContainer(workspace:FindFirstChild("Resources"))
+        attachTreeBushContainer(workspace:FindFirstChild("Crops"))
+        attachTreeBushContainer(workspace)
+        table.insert(tbConns, workspace.ChildAdded:Connect(function(child)
+            if child.Name == "Resources" or child.Name == "Crops" then
+                attachTreeBushContainer(child)
+            end
+        end))
+    end
+
+    Tabs.Map:AddToggle("AutoDeleteTreesBushesToggle", {
+        Title = "Auto Delete Trees & Bushes (Tree / Big Tree / Bush / Big Bush)",
+        Default = false,
+        Callback = function(state)
+            if state then
+                startTreeBushCleanup()
+            else
+                stopTreeBushCleanup()
+            end
+        end
+    })
+end
 
 -- Pickup Tab
 Tabs.Pickup:AddSection("Auto Pickup")
